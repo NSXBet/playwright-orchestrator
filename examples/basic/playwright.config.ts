@@ -8,6 +8,9 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: [['json', { outputFile: 'results.json' }], ['list']],
 
+  // Tests have controlled delays up to 120s, so we need a higher timeout
+  timeout: 150_000, // 2.5 minutes per test
+
   use: {
     trace: 'on-first-retry',
   },
