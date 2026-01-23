@@ -1,6 +1,6 @@
 {
   "name": "@nsxbet/playwright-orchestrator",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Intelligent Playwright test distribution across CI shards using historical timing data",
   "type": "module",
   "main": "dist/index.js",
@@ -12,6 +12,12 @@
     "dist",
     "bin"
   ],
+  "oclif": {
+    "bin": "playwright-orchestrator",
+    "dirname": "playwright-orchestrator",
+    "commands": "./dist/commands",
+    "topicSeparator": " "
+  },
   "scripts": {
     "build": "tsc -b",
     "dev": "tsc -b --watch",
@@ -43,6 +49,10 @@
   "homepage": "https://github.com/NSXBet/playwright-orchestrator#readme",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@oclif/core": "4.8.0",
+    "glob": "11.0.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.11",

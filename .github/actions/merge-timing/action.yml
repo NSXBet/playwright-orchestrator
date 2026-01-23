@@ -1,0 +1,127 @@
+name: Merge Timing Data
+description: Merge timing data from multiple shards using EMA
+
+inputs:
+  artifact-pattern:
+    description: Pattern to match timing artifacts (e.g., timing-shard-*)
+    required: false
+    default: 'timing-shard-*'
+  output-file:
+    description: Path to write merged timing data
+    required: true
+  existing-file:
+    description: Path to existing timing data to merge with
+    required: false
+    default: ''
+  alpha:
+    description: EMA smoothing factor (0-1)
+    required: false
+    default: '0.3'
+  prune-days:
+    description: Remove entries older than N days
+    required: false
+    default: '30'
+  level:
+    description: Data level (file or test)
+    required: false
+    default: 'test'
+  cache-key:
+    description: Cache key prefix for timing data
+    required: false
+    default: 'playwright-timing'
+  branch:
+    description: Branch name for cache key
+    required: false
+    default: ''
+
+outputs:
+  test-count:
+    description: Number of tests in merged data
+    value: ${{ steps.merge.outputs.test-count }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set branch name
+      id: branch
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.branch }}" ]; then
+          echo "name=${{ inputs.branch }}" >> $GITHUB_OUTPUT
+        else
+          branch="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+          echo "name=$branch" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Download timing artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: ${{ inputs.artifact-pattern }}
+        path: .timing-artifacts/
+        merge-multiple: true
+
+    - name: Restore timing cache
+      id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: .timing-cache/
+        key: ${{ inputs.cache-key }}-${{ steps.branch.outputs.name }}
+        restore-keys: |
+          ${{ inputs.cache-key }}-main
+          ${{ inputs.cache-key }}-
+
+    - name: Merge timing data
+      id: merge
+      shell: bash
+      run: |
+        mkdir -p "$(dirname "${{ inputs.output-file }}")"
+
+        # Find all timing artifact files
+        ARTIFACT_FILES=$(find .timing-artifacts/ -name "*.json" -type f 2>/dev/null | tr '\n' ' ')
+
+        if [ -z "$ARTIFACT_FILES" ]; then
+          echo "No timing artifacts found"
+          echo "test-count=0" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        echo "Found timing artifacts: $ARTIFACT_FILES"
+
+        # Build existing file argument
+        EXISTING_ARG=""
+        if [ -n "${{ inputs.existing-file }}" ] && [ -f "${{ inputs.existing-file }}" ]; then
+          EXISTING_ARG="--existing ${{ inputs.existing-file }}"
+        elif [ -f ".timing-cache/timing.json" ]; then
+          EXISTING_ARG="--existing .timing-cache/timing.json"
+        fi
+
+        # Run merge command
+        npx playwright-orchestrator merge-timing \
+          --new $ARTIFACT_FILES \
+          --output "${{ inputs.output-file }}" \
+          --alpha "${{ inputs.alpha }}" \
+          --prune-days "${{ inputs.prune-days }}" \
+          --level "${{ inputs.level }}" \
+          $EXISTING_ARG
+
+        # Get count from output
+        if [ "${{ inputs.level }}" = "test" ]; then
+          COUNT=$(jq '.tests | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+        else
+          COUNT=$(jq '.files | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+        fi
+
+        echo "test-count=$COUNT" >> $GITHUB_OUTPUT
+        echo "Merged timing data has $COUNT entries"
+
+    - name: Prepare cache directory
+      shell: bash
+      run: |
+        mkdir -p .timing-cache/
+        cp "${{ inputs.output-file }}" .timing-cache/timing.json
+
+    - name: Save timing cache
+      uses: actions/cache/save@v4
+      with:
+        path: .timing-cache/
+        key: ${{ inputs.cache-key }}-${{ steps.branch.outputs.name }}-${{ github.run_id }}

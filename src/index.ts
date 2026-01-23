@@ -5,4 +5,5 @@
  * using historical timing data.
  */
 
-export const VERSION = '0.0.0';
+export * from './core/index.js';
+export const VERSION = '0.1.0';

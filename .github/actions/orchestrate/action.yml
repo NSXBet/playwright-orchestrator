@@ -1,0 +1,109 @@
+name: Orchestrate Playwright Tests
+description: Assign tests to shards using historical timing data
+
+inputs:
+  test-dir:
+    description: Path to test directory
+    required: true
+  shards:
+    description: Number of shards
+    required: true
+  shard-index:
+    description: Current shard index (1-based)
+    required: true
+  timing-file:
+    description: Path to timing data JSON file
+    required: false
+    default: ''
+  level:
+    description: Distribution level (file or test)
+    required: false
+    default: 'test'
+  project:
+    description: Playwright project name
+    required: false
+    default: ''
+  cache-key:
+    description: Cache key prefix for timing data
+    required: false
+    default: 'playwright-timing'
+  branch:
+    description: Branch name for cache key (defaults to current branch)
+    required: false
+    default: ''
+
+outputs:
+  grep-pattern:
+    description: Grep pattern for this shard's tests
+    value: ${{ steps.assign.outputs.grep-pattern }}
+  test-count:
+    description: Number of tests assigned to this shard
+    value: ${{ steps.assign.outputs.test-count }}
+  expected-duration:
+    description: Expected duration in milliseconds
+    value: ${{ steps.assign.outputs.expected-duration }}
+  is-optimal:
+    description: Whether the distribution is optimal
+    value: ${{ steps.assign.outputs.is-optimal }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set branch name
+      id: branch
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.branch }}" ]; then
+          echo "name=${{ inputs.branch }}" >> $GITHUB_OUTPUT
+        else
+          # Extract branch name from GITHUB_REF
+          branch="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+          echo "name=$branch" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Restore timing cache
+      id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: .timing-cache/
+        key: ${{ inputs.cache-key }}-${{ steps.branch.outputs.name }}
+        restore-keys: |
+          ${{ inputs.cache-key }}-main
+          ${{ inputs.cache-key }}-
+
+    - name: Assign tests to shards
+      id: assign
+      shell: bash
+      run: |
+        # Build timing-file argument
+        TIMING_ARG=""
+        if [ -n "${{ inputs.timing-file }}" ] && [ -f "${{ inputs.timing-file }}" ]; then
+          TIMING_ARG="--timing-file ${{ inputs.timing-file }}"
+        elif [ -f ".timing-cache/timing.json" ]; then
+          TIMING_ARG="--timing-file .timing-cache/timing.json"
+        fi
+
+        # Run assign command
+        RESULT=$(npx playwright-orchestrator assign \
+          --test-dir "${{ inputs.test-dir }}" \
+          --shards "${{ inputs.shards }}" \
+          --level "${{ inputs.level }}" \
+          --output-format json \
+          $TIMING_ARG)
+
+        echo "Assignment result: $RESULT"
+
+        # Extract this shard's grep pattern
+        SHARD_INDEX="${{ inputs.shard-index }}"
+        GREP_PATTERN=$(echo "$RESULT" | jq -r ".grepPatterns[\"$SHARD_INDEX\"] // .grepPatterns[$SHARD_INDEX] // \"\"")
+        TEST_COUNT=$(echo "$RESULT" | jq -r ".shards[\"$SHARD_INDEX\"] // .shards[$SHARD_INDEX] | length // 0")
+        EXPECTED_DURATION=$(echo "$RESULT" | jq -r ".expectedDurations[\"$SHARD_INDEX\"] // .expectedDurations[$SHARD_INDEX] // 0")
+        IS_OPTIMAL=$(echo "$RESULT" | jq -r ".isOptimal // true")
+
+        echo "grep-pattern=$GREP_PATTERN" >> $GITHUB_OUTPUT
+        echo "test-count=$TEST_COUNT" >> $GITHUB_OUTPUT
+        echo "expected-duration=$EXPECTED_DURATION" >> $GITHUB_OUTPUT
+        echo "is-optimal=$IS_OPTIMAL" >> $GITHUB_OUTPUT
+
+        # Save grep pattern to file for reference
+        echo "$GREP_PATTERN" > .shard-grep-pattern.txt

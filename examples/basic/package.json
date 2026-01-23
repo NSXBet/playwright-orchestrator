@@ -1,0 +1,15 @@
+{
+  "name": "playwright-orchestrator-example",
+  "version": "1.0.0",
+  "description": "Example Playwright project for testing the orchestrator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:list": "playwright test --list --reporter=json",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.53.0"
+  }
+}
