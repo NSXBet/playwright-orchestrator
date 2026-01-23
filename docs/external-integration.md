@@ -18,8 +18,8 @@ The orchestrator provides GitHub Actions that you can reference directly in your
 
 Actions are tagged to match the npm package version:
 
-- `@v1` - Latest v1.x.x (recommended for stability)
-- `@v1.2.3` - Exact version (for reproducibility)
+- `@v0` - Latest v0.x.x (recommended for stability)
+- `@v0.2.0` - Exact version (for reproducibility)
 - `@main` - Latest development (not recommended for production)
 
 ## Workflow Architecture
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Orchestrator
-        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
 
       # YOU control cache location
       - name: Restore timing cache
@@ -78,7 +78,7 @@ jobs:
       # Action handles all orchestration logic
       - name: Orchestrate tests
         id: orchestrate
-        uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+        uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         with:
           test-dir: ./e2e
           shards: ${{ env.SHARDS }}
@@ -109,7 +109,7 @@ jobs:
 
       # Action handles parsing + fallback
       - name: Get shard assignment
-        uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+        uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
         id: shard
         with:
           shard-files: ${{ needs.orchestrate.outputs.shard-files }}
@@ -123,11 +123,11 @@ jobs:
       # Extract timing (runs unless cancelled)
       - name: Setup Orchestrator
         if: success() || failure()
-        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
 
       - name: Extract timing
         if: success() || failure()
-        uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
+        uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
         with:
           report-file: playwright-report/results.json
           output-file: timing-shard-${{ matrix.shard }}.json
@@ -155,7 +155,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Orchestrator
-        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
 
       # YOU control cache location
       - name: Restore timing cache
@@ -173,7 +173,7 @@ jobs:
           merge-multiple: true
 
       - name: Merge timing data
-        uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v1
+        uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v0
         with:
           existing-file: timing-data.json
           new-files: timing-shard-*.json
@@ -195,7 +195,7 @@ jobs:
 Installs and caches the CLI.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+- uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
   with:
     version: ''  # Optional: specific version (default: latest)
 ```
@@ -205,7 +205,7 @@ Installs and caches the CLI.
 Assigns tests to shards. Omit `shard-index` to output ALL shards (recommended for three-phase pattern).
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
   id: orchestrate
   with:
     test-dir: ./e2e           # Required: path to tests
@@ -225,7 +225,7 @@ Assigns tests to shards. Omit `shard-index` to output ALL shards (recommended fo
 Extracts test arguments for a specific shard. Handles parsing and fallback automatically.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
   id: shard
   with:
     shard-files: ${{ needs.orchestrate.outputs.shard-files }}
@@ -243,7 +243,7 @@ Extracts test arguments for a specific shard. Handles parsing and fallback autom
 Extracts timing from Playwright reports.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
+- uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
   with:
     report-file: ./results.json  # Required: Playwright JSON report
     output-file: ./timing.json   # Required: output path
@@ -257,7 +257,7 @@ Extracts timing from Playwright reports.
 Merges timing data with EMA smoothing.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v1
+- uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v0
   with:
     existing-file: ''            # Optional: existing timing data
     new-files: 'timing-*.json'   # Required: space-separated paths/globs

@@ -49,7 +49,7 @@ jobs:
       shard-files: ${{ steps.orchestrate.outputs.shard-files }}
     steps:
       - uses: actions/checkout@v4
-      - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+      - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
       
       # USER CONTROLS: cache location
       - uses: actions/cache/restore@v4
@@ -58,7 +58,7 @@ jobs:
           key: playwright-timing-${{ github.ref_name }}
       
       # ACTION ENCAPSULATES: orchestration logic
-      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         id: orchestrate
         with:
           test-dir: ./e2e
@@ -75,7 +75,7 @@ jobs:
       - uses: actions/checkout@v4
       
       # ACTION ENCAPSULATES: parsing + fallback logic
-      - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+      - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
         id: shard
         with:
           shard-files: ${{ needs.orchestrate.outputs.shard-files }}

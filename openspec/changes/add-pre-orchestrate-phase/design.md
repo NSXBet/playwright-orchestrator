@@ -70,7 +70,7 @@ outputs:
 
 **Usage:**
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
   id: shard
   with:
     shard-files: ${{ needs.orchestrate.outputs.shard-files }}

@@ -239,7 +239,7 @@ Actions do NOT handle cache/artifacts internally. Users control:
     path: timing-data.json
     key: playwright-timing-${{ github.ref_name }}
 
-- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
   with:
     timing-file: timing-data.json  # User provides the file
 ```
@@ -260,7 +260,7 @@ If orchestration fails, workflows should fallback to Playwright's `--shard` flag
 
 ```yaml
 # get-shard action handles this automatically
-- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
   id: shard
   with:
     shard-files: ${{ needs.orchestrate.outputs.shard-files }}
@@ -278,7 +278,7 @@ Use `if: success() || failure()` instead of `always()`:
 ```yaml
 - name: Extract timing
   if: success() || failure()  # NOT always() - skip on cancel
-  uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
+  uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
 ```
 
 ### Key Documentation
