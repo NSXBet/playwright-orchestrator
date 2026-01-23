@@ -20,7 +20,7 @@ runs:
       shell: bash
       run: |
         if [ -n "${{ inputs.version }}" ]; then
-          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          VERSION="${{ inputs.version }}"
         else
           # Get latest version from npm
           VERSION=$(npm view @nsxbet/playwright-orchestrator version 2>/dev/null || echo "")
@@ -28,9 +28,9 @@ runs:
             echo "::error::Package @nsxbet/playwright-orchestrator not found on npm"
             exit 1
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
         fi
-        echo "Installing playwright-orchestrator@${{ steps.version.outputs.version || inputs.version }}"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Installing playwright-orchestrator@$VERSION"
 
     - name: Cache CLI installation
       id: cache

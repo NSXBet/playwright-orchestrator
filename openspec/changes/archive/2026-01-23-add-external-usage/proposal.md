@@ -34,7 +34,7 @@ External projects cannot use the orchestrator as intended. They need:
 
 - Affected specs: `external-integration` (new capability)
 - Affected code:
-  - `.github/actions/setup/action.yml` (new, for external users)
+  - `.github/actions/setup-orchestrator/action.yml` (new, for external users)
   - `.github/actions/orchestrate/action.yml` (simplified)
   - `.github/actions/extract-timing/action.yml` (simplified)
   - `.github/actions/merge-timing/action.yml` (simplified)
@@ -47,7 +47,7 @@ External projects cannot use the orchestrator as intended. They need:
 External projects can integrate the orchestrator with:
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/setup@v1
+- uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
 - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
   with:
     test-dir: ./e2e

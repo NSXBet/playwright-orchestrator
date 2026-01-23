@@ -231,6 +231,10 @@ Extracts timing from Playwright reports.
     level: test                  # Optional: 'test' or 'file'
 ```
 
+**Outputs:**
+- `test-count`: Number of tests with timing data extracted
+- `success`: Whether extraction succeeded (`true` or `false`)
+
 ### merge-timing
 
 Merges timing data with EMA smoothing.
@@ -245,6 +249,10 @@ Merges timing data with EMA smoothing.
     prune-days: '30'             # Optional: remove old entries
     level: test                  # Optional: 'test' or 'file'
 ```
+
+**Outputs:**
+- `test-count`: Number of tests in merged data
+- `success`: Whether merge succeeded (`true` or `false`)
 
 ## Fallback Behavior
 
