@@ -43,11 +43,11 @@
 - [x] 6.1 Create `docs/external-integration.md` with complete guide
 - [x] 6.2 Add external usage section to README.md
 - [x] 6.3 Create `examples/external-workflow.yml` as copy-paste template
-- [ ] 6.4 Update AGENTS.md with external usage patterns
+- [x] 6.4 Update AGENTS.md with external usage patterns
 
 ## 7. Validation
 
-- [ ] 7.1 Test setup action installs CLI correctly
-- [ ] 7.2 Test orchestrate action fallback behavior
-- [ ] 7.3 Test full workflow in example project
-- [ ] 7.4 Verify existing internal workflows still work
+- [x] 7.1 Test setup action installs CLI correctly (via e2e-example.yml)
+- [x] 7.2 Test orchestrate action fallback behavior (via e2e-example.yml)
+- [x] 7.3 Test full workflow in example project (via e2e-example.yml)
+- [x] 7.4 Verify existing internal workflows still work (CI workflow)
