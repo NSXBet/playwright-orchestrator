@@ -19,7 +19,7 @@ inputs:
   level:
     description: Distribution level (file or test)
     required: false
-    default: 'file'
+    default: 'test'
   glob-pattern:
     description: Glob pattern for test files
     required: false
