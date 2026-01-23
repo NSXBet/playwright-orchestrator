@@ -1,5 +1,11 @@
 # E2E Test Orchestration
 
+## Purpose
+
+Intelligent distribution of Playwright tests across CI shards using historical timing data. The orchestrator learns test durations from previous runs and uses the CKK algorithm to balance shards, minimizing total CI time.
+
+## Requirements
+
 ### Requirement: Test Discovery
 
 The system SHALL discover all tests in a Playwright project.
