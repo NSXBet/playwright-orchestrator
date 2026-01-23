@@ -2,9 +2,9 @@
 
 ## 1. NPM Publishing Setup
 
-- [ ] 1.1 Update `package.json` with publishConfig and repository fields
-- [ ] 1.2 Create `.github/workflows/release.yml` for npm publishing
-- [ ] 1.3 Add `files` field to include only necessary files in package
+- [x] 1.1 Update `package.json` with publishConfig and repository fields
+- [x] 1.2 Create `.github/workflows/release.yml` for npm publishing (using changesets)
+- [x] 1.3 Add `files` field to include only necessary files in package
 
 ## 2. Setup Action for External Users
 
