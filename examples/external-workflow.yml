@@ -1,5 +1,10 @@
 # Example workflow for external repositories
 # Copy this to your repository's .github/workflows/ directory
+#
+# This workflow uses a three-phase pattern:
+# 1. orchestrate: Run once, compute shard assignments for all shards
+# 2. e2e: Matrix jobs read their assignments and run tests
+# 3. merge-timing: Collect timing data from all shards
 
 name: E2E Tests with Orchestrator
 
@@ -12,23 +17,27 @@ env:
   SHARDS: 4
 
 jobs:
-  e2e:
-    name: E2E Shard ${{ matrix.shard }}
+  # ============================================
+  # Phase 1: Orchestrate (runs once)
+  # ============================================
+  orchestrate:
+    name: Orchestrate
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
+    timeout-minutes: 10
+    outputs:
+      shard-files: ${{ steps.assign.outputs.shard-files }}
+      expected-durations: ${{ steps.assign.outputs.expected-durations }}
+      use-orchestrator: ${{ steps.assign.outputs.use-orchestrator }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Install the orchestrator CLI
       - name: Setup Orchestrator
         uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
 
       # Restore timing data from cache
       - name: Restore timing cache
+        id: cache
         uses: actions/cache/restore@v4
         with:
           path: timing-data.json
@@ -37,15 +46,65 @@ jobs:
             playwright-timing-main
             playwright-timing-
 
-      # Assign tests to this shard
-      - name: Orchestrate tests
-        id: orchestrate
-        uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
-        with:
-          test-dir: ./e2e  # Adjust to your test directory
-          shards: ${{ env.SHARDS }}
-          shard-index: ${{ matrix.shard }}
-          timing-file: timing-data.json
+      # Run orchestrator to assign tests to shards
+      - name: Assign tests to shards
+        id: assign
+        run: |
+          # Build timing file argument if cache hit
+          TIMING_ARG=""
+          if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ]; then
+            TIMING_ARG="--timing-file timing-data.json"
+          fi
+
+          # Run orchestrator and capture output
+          set +e
+          RESULT=$(playwright-orchestrator assign \
+            --test-dir ./e2e \
+            --shards ${{ env.SHARDS }} \
+            --level file \
+            --output-format json \
+            $TIMING_ARG 2>&1)
+          EXIT_CODE=$?
+          set -e
+
+          # Validate output: must be exit 0 AND valid JSON
+          if [ $EXIT_CODE -ne 0 ] || ! echo "$RESULT" | jq -e '.' > /dev/null 2>&1; then
+            echo "::warning::Orchestrator failed (exit: $EXIT_CODE), falling back to native sharding"
+            echo "Error: $RESULT"
+            echo "use-orchestrator=false" >> $GITHUB_OUTPUT
+            echo "shard-files={}" >> $GITHUB_OUTPUT
+            echo "expected-durations={}" >> $GITHUB_OUTPUT
+          else
+            echo "use-orchestrator=true" >> $GITHUB_OUTPUT
+            echo "shard-files=$(echo "$RESULT" | jq -c '.shards')" >> $GITHUB_OUTPUT
+            echo "expected-durations=$(echo "$RESULT" | jq -c '.expectedDurations')" >> $GITHUB_OUTPUT
+
+            # Log summary to job
+            echo "### Orchestrator Assignment" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            for i in $(seq 1 ${{ env.SHARDS }}); do
+              FILES=$(echo "$RESULT" | jq -r ".shards.\"$i\" | length")
+              DURATION=$(echo "$RESULT" | jq -r ".expectedDurations.\"$i\"")
+              DURATION_SEC=$((DURATION / 1000))
+              echo "- **Shard $i**: $FILES files (~${DURATION_SEC}s expected)" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+
+  # ============================================
+  # Phase 2: Run tests (parallel matrix)
+  # ============================================
+  e2e:
+    name: E2E Shard ${{ matrix.shard }}
+    needs: [orchestrate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       # Setup your project (adjust as needed)
       - name: Setup Node.js
@@ -60,27 +119,48 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      # Run tests with orchestration or fallback
-      - name: Run Playwright tests
+      # Get files assigned to this shard from orchestrate job
+      - name: Get shard files
+        if: needs.orchestrate.outputs.use-orchestrator == 'true'
+        id: files
         run: |
-          if [ "${{ steps.orchestrate.outputs.use-native-sharding }}" = "true" ]; then
-            echo "::notice::Using native Playwright sharding (fallback)"
-            npx playwright test ${{ steps.orchestrate.outputs.shard-arg }}
-          else
-            echo "::notice::Using orchestrated distribution (${{ steps.orchestrate.outputs.test-count }} tests)"
-            npx playwright test --grep "${{ steps.orchestrate.outputs.grep-pattern }}"
-          fi
+          FILES=$(echo '${{ needs.orchestrate.outputs.shard-files }}' | jq -r '.["${{ matrix.shard }}"] | join(" ")')
+          echo "list=$FILES" >> $GITHUB_OUTPUT
+          echo "has-files=$([ -n "$FILES" ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+      # Run tests with orchestrated file list
+      - name: Run Playwright tests (orchestrated)
+        if: needs.orchestrate.outputs.use-orchestrator == 'true' && steps.files.outputs.has-files == 'true'
+        run: |
+          echo "::notice::Running orchestrated tests (${{ steps.files.outputs.list }})"
+          npx playwright test ${{ steps.files.outputs.list }}
+
+      # Fallback to native sharding if orchestrator failed
+      - name: Run Playwright tests (fallback)
+        if: needs.orchestrate.outputs.use-orchestrator != 'true'
+        run: |
+          echo "::notice::Using native Playwright sharding (fallback)"
+          npx playwright test --shard=${{ matrix.shard }}/${{ env.SHARDS }}
+
+      # Skip if no files assigned to this shard
+      - name: Skip empty shard
+        if: needs.orchestrate.outputs.use-orchestrator == 'true' && steps.files.outputs.has-files != 'true'
+        run: echo "::notice::No files assigned to this shard, skipping"
 
       # Extract timing data (runs unless cancelled)
+      - name: Setup Orchestrator
+        if: success() || failure()
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+
       - name: Extract timing
         if: success() || failure()
         uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
         with:
-          report-file: playwright-report/results.json  # Adjust to your report path
+          report-file: playwright-report/results.json
           output-file: timing-shard-${{ matrix.shard }}.json
           shard: ${{ matrix.shard }}
+          level: file
 
-      # Upload timing artifact
       - name: Upload timing artifact
         if: success() || failure()
         uses: actions/upload-artifact@v4
@@ -88,8 +168,9 @@ jobs:
           name: timing-shard-${{ matrix.shard }}
           path: timing-shard-${{ matrix.shard }}.json
           retention-days: 1
+          if-no-files-found: ignore
 
-      # Upload Playwright report (optional)
+      # Upload Playwright report on failure (optional)
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
@@ -98,9 +179,12 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  # ============================================
+  # Phase 3: Merge timing data
+  # ============================================
   merge-timing:
     name: Merge Timing Data
-    needs: e2e
+    needs: [orchestrate, e2e]
     if: success() || failure()
     runs-on: ubuntu-24.04
     steps:
@@ -132,6 +216,7 @@ jobs:
           existing-file: timing-data.json
           new-files: timing-shard-*.json
           output-file: timing-data.json
+          level: file
 
       # Save updated timing cache
       - name: Save timing cache
@@ -148,7 +233,7 @@ jobs:
             jq '{
               version: .version,
               updatedAt: .updatedAt,
-              testCount: (.tests | length)
+              fileCount: (.files | length)
             }' timing-data.json
           else
             echo "No timing data file found"

@@ -57,67 +57,90 @@ playwright-orchestrator merge-timing \
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │  Orchestrate    │────▶│   Run Tests     │────▶│  Merge Timing   │
-│  (assign)       │     │   (parallel)    │     │  (EMA smooth)   │
+│  (1 job)        │     │   (N parallel)  │     │  (1 job)        │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
         │                       │                       │
         ▼                       ▼                       ▼
-  timing-data.json        --grep patterns         timing-data.json
-  (read history)          (per shard)             (updated)
+  Run CKK once            Read shard-files         Merge all shards
+  Output all shards       from job outputs         Update cache
 ```
 
-1. **Orchestrate**: Read timing history, distribute tests across shards
-2. **Run Tests**: Each shard runs its assigned tests via `--grep`
+1. **Orchestrate**: Run once, compute assignments for ALL shards
+2. **Run Tests**: Each shard reads its files from `needs.orchestrate.outputs`
 3. **Merge**: Collect timing from all shards, update history with EMA
 
 ## GitHub Actions (External Repositories)
 
-Use the orchestrator in your own repository with these actions:
+Use the orchestrator in your own repository. The recommended pattern runs orchestration **once** before matrix jobs:
 
 ```yaml
 jobs:
-  e2e:
+  # Phase 1: Orchestrate (runs once)
+  orchestrate:
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        shard: [1, 2, 3, 4]
+    outputs:
+      shard-files: ${{ steps.assign.outputs.shard-files }}
+      use-orchestrator: ${{ steps.assign.outputs.use-orchestrator }}
     steps:
       - uses: actions/checkout@v4
-
-      # Install orchestrator CLI
       - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
 
-      # Restore timing cache (you control this)
       - uses: actions/cache/restore@v4
+        id: cache
         with:
           path: timing-data.json
           key: playwright-timing-${{ github.ref_name }}
           restore-keys: playwright-timing-
 
-      # Assign tests to this shard
-      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
-        id: orchestrate
-        with:
-          test-dir: ./e2e
-          shards: 4
-          shard-index: ${{ matrix.shard }}
-          timing-file: timing-data.json
-
-      # Run tests (with fallback to native sharding)
-      - name: Run Playwright
+      - name: Assign tests to shards
+        id: assign
         run: |
-          if [ "${{ steps.orchestrate.outputs.use-native-sharding }}" = "true" ]; then
-            npx playwright test ${{ steps.orchestrate.outputs.shard-arg }}
-          else
-            npx playwright test --grep "${{ steps.orchestrate.outputs.grep-pattern }}"
+          TIMING_ARG=""
+          if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ]; then
+            TIMING_ARG="--timing-file timing-data.json"
           fi
 
-      # Extract timing (runs on success or failure, not on cancel)
-      - if: success() || failure()
-        uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
-        with:
-          report-file: playwright-report/results.json
-          output-file: timing-shard-${{ matrix.shard }}.json
-          shard: ${{ matrix.shard }}
+          set +e
+          RESULT=$(playwright-orchestrator assign \
+            --test-dir ./e2e \
+            --shards 4 \
+            --level file \
+            --output-format json \
+            $TIMING_ARG 2>&1)
+          EXIT_CODE=$?
+          set -e
+
+          if [ $EXIT_CODE -ne 0 ] || ! echo "$RESULT" | jq -e '.' > /dev/null 2>&1; then
+            echo "use-orchestrator=false" >> $GITHUB_OUTPUT
+          else
+            echo "use-orchestrator=true" >> $GITHUB_OUTPUT
+            echo "shard-files=$(echo "$RESULT" | jq -c '.shards')" >> $GITHUB_OUTPUT
+          fi
+
+  # Phase 2: Run tests (parallel matrix)
+  e2e:
+    needs: [orchestrate]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get shard files
+        id: files
+        run: |
+          FILES=$(echo '${{ needs.orchestrate.outputs.shard-files }}' | jq -r '.["${{ matrix.shard }}"] | join(" ")')
+          echo "list=$FILES" >> $GITHUB_OUTPUT
+
+      - name: Run tests (orchestrated)
+        if: needs.orchestrate.outputs.use-orchestrator == 'true' && steps.files.outputs.list != ''
+        run: npx playwright test ${{ steps.files.outputs.list }}
+
+      - name: Run tests (fallback)
+        if: needs.orchestrate.outputs.use-orchestrator != 'true'
+        run: npx playwright test --shard=${{ matrix.shard }}/4
 ```
 
 See [docs/external-integration.md](./docs/external-integration.md) for complete workflow with timing data persistence.
