@@ -1,0 +1,155 @@
+# Example workflow for external repositories
+# Copy this to your repository's .github/workflows/ directory
+
+name: E2E Tests with Orchestrator
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  SHARDS: 4
+
+jobs:
+  e2e:
+    name: E2E Shard ${{ matrix.shard }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Install the orchestrator CLI
+      - name: Setup Orchestrator
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+
+      # Restore timing data from cache
+      - name: Restore timing cache
+        uses: actions/cache/restore@v4
+        with:
+          path: timing-data.json
+          key: playwright-timing-${{ github.ref_name }}
+          restore-keys: |
+            playwright-timing-main
+            playwright-timing-
+
+      # Assign tests to this shard
+      - name: Orchestrate tests
+        id: orchestrate
+        uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+        with:
+          test-dir: ./e2e  # Adjust to your test directory
+          shards: ${{ env.SHARDS }}
+          shard-index: ${{ matrix.shard }}
+          timing-file: timing-data.json
+
+      # Setup your project (adjust as needed)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      # Run tests with orchestration or fallback
+      - name: Run Playwright tests
+        run: |
+          if [ "${{ steps.orchestrate.outputs.use-native-sharding }}" = "true" ]; then
+            echo "::notice::Using native Playwright sharding (fallback)"
+            npx playwright test ${{ steps.orchestrate.outputs.shard-arg }}
+          else
+            echo "::notice::Using orchestrated distribution (${{ steps.orchestrate.outputs.test-count }} tests)"
+            npx playwright test --grep "${{ steps.orchestrate.outputs.grep-pattern }}"
+          fi
+
+      # Extract timing data (runs unless cancelled)
+      - name: Extract timing
+        if: success() || failure()
+        uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
+        with:
+          report-file: playwright-report/results.json  # Adjust to your report path
+          output-file: timing-shard-${{ matrix.shard }}.json
+          shard: ${{ matrix.shard }}
+
+      # Upload timing artifact
+      - name: Upload timing artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timing-shard-${{ matrix.shard }}
+          path: timing-shard-${{ matrix.shard }}.json
+          retention-days: 1
+
+      # Upload Playwright report (optional)
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.shard }}
+          path: playwright-report/
+          retention-days: 7
+
+  merge-timing:
+    name: Merge Timing Data
+    needs: e2e
+    if: success() || failure()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Orchestrator
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+
+      # Restore existing timing data
+      - name: Restore timing cache
+        uses: actions/cache/restore@v4
+        with:
+          path: timing-data.json
+          key: playwright-timing-${{ github.ref_name }}
+          restore-keys: playwright-timing-
+
+      # Download timing artifacts from all shards
+      - name: Download timing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: timing-shard-*
+          merge-multiple: true
+
+      # Merge all timing data
+      - name: Merge timing data
+        uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v1
+        with:
+          existing-file: timing-data.json
+          new-files: timing-shard-*.json
+          output-file: timing-data.json
+
+      # Save updated timing cache
+      - name: Save timing cache
+        uses: actions/cache/save@v4
+        with:
+          path: timing-data.json
+          key: playwright-timing-${{ github.ref_name }}-${{ github.run_id }}
+
+      # Show timing stats (optional)
+      - name: Show timing stats
+        run: |
+          echo "=== Timing Data Stats ==="
+          if [ -f timing-data.json ]; then
+            jq '{
+              version: .version,
+              updatedAt: .updatedAt,
+              testCount: (.tests | length)
+            }' timing-data.json
+          else
+            echo "No timing data file found"
+          fi
