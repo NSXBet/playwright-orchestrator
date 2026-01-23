@@ -2,121 +2,187 @@
 
 ## Context
 
-GitHub Actions matrix jobs run in parallel. The documented workflow pattern runs orchestration in each matrix job independently. This means 4 shards = 4 identical orchestration runs. The CKK algorithm is deterministic, so all runs produce the same result.
+GitHub Actions matrix jobs run in parallel. The documented workflow pattern runs orchestration in each matrix job independently. This means 4 shards = 4 identical orchestration runs.
 
-A better pattern exists and is proven in production: run orchestration once in a dedicated job, pass assignments to matrix jobs via GitHub outputs.
+The current documentation puts too much manual work on users: shell scripting, jq parsing, fallback logic. This is bad DX.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Document the three-phase workflow pattern as recommended
-- Update examples to use the proven pattern from bet-app
-- Keep actions storage-agnostic
+- Encapsulate complexity in actions
+- User controls only storage (cache keys, artifact paths)
+- Run orchestration once, not N times
+- Zero shell scripting required for basic usage
 
 **Non-Goals:**
-- Creating new actions (existing CLI already supports this)
 - Deprecating the per-shard orchestration pattern
 - Handling cross-workflow orchestration
 
 ## Decisions
 
-### Decision 1: Documentation-Only Change
+### Decision 1: Make `shard-index` Optional in `orchestrate` Action
 
-**What:** Update documentation and examples to show three-phase pattern. No new actions needed.
-
-**Why:**
-- The CLI already outputs all shard assignments with `--output-format json`
-- The pattern is proven working in bet-app production
-- Simpler than creating new actions
-
-**Existing CLI output:**
-```json
-{
-  "shards": {
-    "1": ["file1.spec.ts", "file2.spec.ts"],
-    "2": ["file3.spec.ts"],
-    ...
-  },
-  "expectedDurations": {
-    "1": 45000,
-    "2": 43000,
-    ...
-  },
-  "isOptimal": true
-}
-```
-
-### Decision 2: Pass Assignments via GitHub Outputs
-
-**What:** Use `GITHUB_OUTPUT` to pass assignment JSON to dependent jobs via `needs.<job>.outputs`.
+**What:** When `shard-index` is omitted, output ALL shard assignments.
 
 **Why:**
-- Native GitHub Actions mechanism
-- No artifact upload/download overhead
-- Immediate availability to dependent jobs
-- Already proven in bet-app
+- Same action, two modes
+- Backwards compatible (existing usage still works)
+- No new action needed for orchestrate phase
 
-**Implementation (from bet-app):**
+**Outputs when `shard-index` omitted:**
 ```yaml
-# orchestrate job outputs
 outputs:
-  shard-files: ${{ steps.assign.outputs.shard-files }}
-  use-orchestrator: ${{ steps.assign.outputs.use-orchestrator }}
-
-# Shard job reads assignment
-- name: Get shard files
-  run: |
-    FILES=$(echo '${{ needs.orchestrate.outputs.shard-files }}' | jq -r '.["${{ matrix.shardIndex }}"] | join(" ")')
-    echo "files=$FILES" >> $GITHUB_OUTPUT
-
-- name: Run tests
-  run: npx playwright test ${{ steps.get-files.outputs.files }}
+  shard-files: '{"1": ["a.spec.ts"], "2": ["b.spec.ts"], ...}'
+  expected-durations: '{"1": 45000, "2": 43000, ...}'
+  use-orchestrator: 'true'  # or 'false' if failed
 ```
 
-### Decision 3: File-Level Distribution (Recommended)
+### Decision 2: New `get-shard` Helper Action
 
-**What:** Document file-level (`--level file`) as the simpler approach for the three-phase pattern.
+**What:** Simple action to extract a shard's test arguments from the orchestrate output.
 
 **Why:**
-- Pass file list directly to Playwright (simpler than `--grep` patterns)
+- Encapsulates jq parsing
+- Handles fallback logic
+- Single output `test-args` that "just works"
+
+**Inputs:**
+```yaml
+inputs:
+  shard-files:
+    description: JSON from orchestrate action
+    required: true
+  shard-index:
+    description: Which shard (1-based)
+    required: true
+  shards:
+    description: Total shards (for fallback)
+    required: true
+```
+
+**Outputs:**
+```yaml
+outputs:
+  test-args:     # Either "file1.spec.ts file2.spec.ts" OR "--shard=1/4"
+  has-files:     # 'true' if orchestrated files exist
+  file-list:     # Space-separated file list (empty if fallback)
+```
+
+**Usage:**
+```yaml
+- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+  id: shard
+  with:
+    shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+    shard-index: ${{ matrix.shard }}
+    shards: 4
+
+# Just works - either files or --shard=N/M
+- run: npx playwright test ${{ steps.shard.outputs.test-args }}
+```
+
+### Decision 3: File-Level as Default
+
+**What:** Default to `--level file` in examples.
+
+**Why:**
+- Simpler output (file names vs grep patterns)
 - Works with any Playwright version
-- Proven in bet-app with 8 shards
+- Proven at scale (bet-app, 8 shards)
 
-**Test-level still available:** For finer granularity, users can use test-level with `--grep` patterns, but file-level is recommended for most cases.
+### Decision 4: Storage-Agnostic Remains
 
-### Decision 4: Inline Fallback Logic
-
-**What:** Show fallback logic inline in workflow YAML, not as a separate action.
+**What:** Actions still don't handle cache/artifacts internally.
 
 **Why:**
-- More transparent for users
-- Easy to customize
-- Matches bet-app pattern
+- User controls cache keys, paths, backends
+- Consistent with existing design
+- Flexibility for S3, GCS, etc.
+
+## Implementation
+
+### `orchestrate` action changes
 
 ```yaml
-- name: Run assign
-  run: |
-    set +e
-    RESULT=$(playwright-orchestrator assign ... 2>&1)
-    EXIT_CODE=$?
-    set -e
-    
-    if [ $EXIT_CODE -ne 0 ] || ! echo "$RESULT" | jq -e '.' > /dev/null 2>&1; then
-      echo "use-orchestrator=false" >> $GITHUB_OUTPUT
-    else
-      echo "use-orchestrator=true" >> $GITHUB_OUTPUT
-      echo "shard-files=$(echo "$RESULT" | jq -c '.shards')" >> $GITHUB_OUTPUT
-    fi
+inputs:
+  shard-index:
+    description: Current shard (1-based). Omit for all shards.
+    required: false  # CHANGED from true
+    default: ''
+
+outputs:
+  # Existing outputs (for per-shard mode)
+  grep-pattern: ...
+  test-count: ...
+  
+  # New outputs (for all-shards mode)
+  shard-files:
+    description: JSON object with all shard assignments
+  expected-durations:
+    description: JSON object with expected durations per shard
+  use-orchestrator:
+    description: Whether orchestration succeeded
+```
+
+### New `get-shard` action
+
+```yaml
+name: Get Shard Test Arguments
+description: Extract test arguments for a specific shard
+
+inputs:
+  shard-files:
+    description: JSON shard assignments from orchestrate action
+    required: true
+  shard-index:
+    description: Which shard to get (1-based)
+    required: true
+  shards:
+    description: Total shard count (for native fallback)
+    required: true
+
+outputs:
+  test-args:
+    description: Arguments for playwright test command
+  has-files:
+    description: Whether this shard has orchestrated files
+  file-list:
+    description: Space-separated file list (empty if fallback)
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        SHARD_FILES='${{ inputs.shard-files }}'
+        SHARD_INDEX='${{ inputs.shard-index }}'
+        TOTAL='${{ inputs.shards }}'
+        
+        # Check if we have valid shard files
+        if [ -z "$SHARD_FILES" ] || [ "$SHARD_FILES" = "{}" ]; then
+          echo "test-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
+          echo "has-files=false" >> $GITHUB_OUTPUT
+          echo "file-list=" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        # Extract files for this shard
+        FILES=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" // [] | join(\" \")")
+        
+        if [ -z "$FILES" ]; then
+          echo "test-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
+          echo "has-files=false" >> $GITHUB_OUTPUT
+        else
+          echo "test-args=$FILES" >> $GITHUB_OUTPUT
+          echo "has-files=true" >> $GITHUB_OUTPUT
+        fi
+        echo "file-list=$FILES" >> $GITHUB_OUTPUT
 ```
 
 ## Risks / Trade-offs
 
 | Risk | Mitigation |
 |------|------------|
-| GitHub output size limit (1MB) | File-level keeps output small; document limit |
-| More complex workflow YAML | Provide copy-paste example |
-| Users may not update | Keep old pattern working, add warning |
-
-## Open Questions
-
-None - pattern is proven in bet-app production.
+| GitHub output size limit (1MB) | File-level keeps output small |
+| Two action calls instead of one | Still simpler than shell scripting |
+| Breaking change? | No - `shard-index` becomes optional |

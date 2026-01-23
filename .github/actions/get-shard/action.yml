@@ -1,0 +1,60 @@
+name: Get Shard Test Arguments
+description: Extract test arguments for a specific shard from orchestrate output
+
+inputs:
+  shard-files:
+    description: JSON shard assignments from orchestrate action (shard-files output)
+    required: true
+  shard-index:
+    description: Which shard to get (1-based)
+    required: true
+  shards:
+    description: Total shard count (for native fallback)
+    required: true
+
+outputs:
+  test-args:
+    description: Arguments for playwright test command (files or --shard=N/M)
+    value: ${{ steps.parse.outputs.test-args }}
+  has-files:
+    description: Whether this shard has orchestrated files
+    value: ${{ steps.parse.outputs.has-files }}
+  file-list:
+    description: Space-separated file list (empty if fallback)
+    value: ${{ steps.parse.outputs.file-list }}
+
+runs:
+  using: composite
+  steps:
+    - name: Parse shard assignment
+      id: parse
+      shell: bash
+      run: |
+        SHARD_FILES='${{ inputs.shard-files }}'
+        SHARD_INDEX='${{ inputs.shard-index }}'
+        TOTAL='${{ inputs.shards }}'
+
+        # Check if we have valid shard files
+        if [ -z "$SHARD_FILES" ] || [ "$SHARD_FILES" = "{}" ] || [ "$SHARD_FILES" = "null" ]; then
+          echo "::notice::No orchestrator data, using native sharding for shard $SHARD_INDEX/$TOTAL"
+          echo "test-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
+          echo "has-files=false" >> $GITHUB_OUTPUT
+          echo "file-list=" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # Extract files for this shard
+        FILES=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" // [] | join(\" \")")
+
+        if [ -z "$FILES" ]; then
+          echo "::notice::No files assigned to shard $SHARD_INDEX, using native sharding"
+          echo "test-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
+          echo "has-files=false" >> $GITHUB_OUTPUT
+          echo "file-list=" >> $GITHUB_OUTPUT
+        else
+          FILE_COUNT=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" | length")
+          echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT files"
+          echo "test-args=$FILES" >> $GITHUB_OUTPUT
+          echo "has-files=true" >> $GITHUB_OUTPUT
+          echo "file-list=$FILES" >> $GITHUB_OUTPUT
+        fi

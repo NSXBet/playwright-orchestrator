@@ -79,43 +79,26 @@ jobs:
   orchestrate:
     runs-on: ubuntu-24.04
     outputs:
-      shard-files: ${{ steps.assign.outputs.shard-files }}
-      use-orchestrator: ${{ steps.assign.outputs.use-orchestrator }}
+      shard-files: ${{ steps.orchestrate.outputs.shard-files }}
     steps:
       - uses: actions/checkout@v4
       - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
 
+      # YOU control cache location
       - uses: actions/cache/restore@v4
-        id: cache
         with:
           path: timing-data.json
           key: playwright-timing-${{ github.ref_name }}
           restore-keys: playwright-timing-
 
-      - name: Assign tests to shards
-        id: assign
-        run: |
-          TIMING_ARG=""
-          if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ]; then
-            TIMING_ARG="--timing-file timing-data.json"
-          fi
-
-          set +e
-          RESULT=$(playwright-orchestrator assign \
-            --test-dir ./e2e \
-            --shards 4 \
-            --level file \
-            --output-format json \
-            $TIMING_ARG 2>&1)
-          EXIT_CODE=$?
-          set -e
-
-          if [ $EXIT_CODE -ne 0 ] || ! echo "$RESULT" | jq -e '.' > /dev/null 2>&1; then
-            echo "use-orchestrator=false" >> $GITHUB_OUTPUT
-          else
-            echo "use-orchestrator=true" >> $GITHUB_OUTPUT
-            echo "shard-files=$(echo "$RESULT" | jq -c '.shards')" >> $GITHUB_OUTPUT
-          fi
+      # Action handles all orchestration logic
+      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+        id: orchestrate
+        with:
+          test-dir: ./e2e
+          shards: 4
+          timing-file: timing-data.json
+          # No shard-index = outputs ALL shards
 
   # Phase 2: Run tests (parallel matrix)
   e2e:
@@ -128,19 +111,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get shard files
-        id: files
-        run: |
-          FILES=$(echo '${{ needs.orchestrate.outputs.shard-files }}' | jq -r '.["${{ matrix.shard }}"] | join(" ")')
-          echo "list=$FILES" >> $GITHUB_OUTPUT
+      # Action handles parsing + fallback
+      - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+        id: shard
+        with:
+          shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+          shard-index: ${{ matrix.shard }}
+          shards: 4
 
-      - name: Run tests (orchestrated)
-        if: needs.orchestrate.outputs.use-orchestrator == 'true' && steps.files.outputs.list != ''
-        run: npx playwright test ${{ steps.files.outputs.list }}
-
-      - name: Run tests (fallback)
-        if: needs.orchestrate.outputs.use-orchestrator != 'true'
-        run: npx playwright test --shard=${{ matrix.shard }}/4
+      # Just works - either files or --shard=N/M
+      - run: npx playwright test ${{ steps.shard.outputs.test-args }}
 ```
 
 See [docs/external-integration.md](./docs/external-integration.md) for complete workflow with timing data persistence.

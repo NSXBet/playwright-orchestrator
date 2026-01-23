@@ -1,45 +1,64 @@
 ## ADDED Requirements
 
-### Requirement: Three-Phase Workflow Pattern
+### Requirement: All-Shards Output Mode
 
-The documentation SHALL describe and recommend a three-phase workflow pattern: orchestrate → run tests → merge timing.
+The orchestrate action SHALL support outputting all shard assignments when `shard-index` is omitted.
 
-#### Scenario: Three-phase workflow documentation
+#### Scenario: Omit shard-index for all shards
 
-- **GIVEN** the external integration documentation
-- **WHEN** a user reads the "Complete Workflow" section
-- **THEN** they see the three-phase pattern with a dedicated orchestrate job
-- **AND** the orchestrate job runs before matrix jobs
-- **AND** matrix jobs read assignments from `needs.orchestrate.outputs`
+- **GIVEN** the orchestrate action is called without `shard-index`
+- **WHEN** the action runs successfully
+- **THEN** it outputs `shard-files` containing all shard assignments as JSON
+- **AND** it outputs `expected-durations` for each shard
+- **AND** it outputs `use-orchestrator=true`
 
-#### Scenario: Pass assignments via GitHub outputs
+#### Scenario: Fallback when orchestration fails
 
-- **GIVEN** an orchestrate job outputs `shard-files` as JSON
-- **WHEN** a matrix job references `needs.orchestrate.outputs.shard-files`
-- **THEN** the matrix job can parse its file list using jq
-- **AND** pass the files directly to Playwright
+- **GIVEN** the orchestrate action fails (CLI error or invalid output)
+- **WHEN** the error is caught
+- **THEN** it outputs `use-orchestrator=false`
+- **AND** it outputs `shard-files={}` (empty object)
 
-#### Scenario: Inline fallback logic
+### Requirement: Get-Shard Helper Action
 
-- **GIVEN** the orchestrate job runs the assign command
-- **WHEN** the command fails or returns invalid JSON
-- **THEN** the job outputs `use-orchestrator=false`
-- **AND** matrix jobs fall back to native `--shard` flag
+The system SHALL provide a `get-shard` action that extracts test arguments for a specific shard.
 
-### Requirement: File-Level Distribution Recommended
+#### Scenario: Extract shard files
 
-The documentation SHALL recommend file-level distribution (`--level file`) for the three-phase pattern.
+- **GIVEN** a `shard-files` JSON from orchestrate action
+- **AND** a `shard-index` to extract
+- **WHEN** the get-shard action runs
+- **THEN** it outputs `test-args` with the file list for that shard
+- **AND** it outputs `has-files=true`
 
-#### Scenario: File-level is simpler
+#### Scenario: Fallback to native sharding
 
-- **GIVEN** a user reading the documentation
-- **WHEN** they see the recommended workflow
-- **THEN** it uses `--level file` by default
-- **AND** explains that file list can be passed directly to Playwright
+- **GIVEN** `shard-files` is empty or missing the shard
+- **WHEN** the get-shard action runs
+- **THEN** it outputs `test-args=--shard=N/M` (native Playwright format)
+- **AND** it outputs `has-files=false`
 
-#### Scenario: Test-level alternative
+#### Scenario: Simple usage
 
-- **GIVEN** a user needs finer granularity
-- **WHEN** they read the advanced section
-- **THEN** they can use `--level test` with `--grep` patterns
-- **AND** trade-offs are documented
+- **GIVEN** a user in a matrix job
+- **WHEN** they use the get-shard action
+- **THEN** they can run `npx playwright test ${{ steps.shard.outputs.test-args }}`
+- **AND** it works regardless of orchestration success (files or fallback)
+
+### Requirement: Encapsulated Complexity
+
+Actions SHALL encapsulate all parsing and fallback logic. Users SHALL NOT need shell scripting for basic usage.
+
+#### Scenario: No jq required
+
+- **GIVEN** a user following the documentation
+- **WHEN** they implement the three-phase workflow
+- **THEN** they do not need to write jq commands
+- **AND** they do not need shell scripting for JSON parsing
+
+#### Scenario: User controls only storage
+
+- **GIVEN** the three-phase workflow
+- **WHEN** the user configures their workflow
+- **THEN** they only control cache keys and artifact paths
+- **AND** all orchestration logic is handled by actions
