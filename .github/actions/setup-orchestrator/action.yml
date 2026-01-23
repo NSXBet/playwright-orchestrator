@@ -1,0 +1,62 @@
+name: Setup Playwright Orchestrator
+description: Install and cache the playwright-orchestrator CLI for external repositories
+
+inputs:
+  version:
+    description: Package version to install (defaults to latest)
+    required: false
+    default: ''
+
+outputs:
+  version:
+    description: The installed version
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Determine version
+      id: version
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          # Get latest version from npm
+          VERSION=$(npm view @nsxbet/playwright-orchestrator version 2>/dev/null || echo "")
+          if [ -z "$VERSION" ]; then
+            echo "::error::Package @nsxbet/playwright-orchestrator not found on npm"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        fi
+        echo "Installing playwright-orchestrator@${{ steps.version.outputs.version || inputs.version }}"
+
+    - name: Cache CLI installation
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm-global
+        key: playwright-orchestrator-${{ steps.version.outputs.version }}-${{ runner.os }}
+
+    - name: Configure npm global directory
+      shell: bash
+      run: |
+        mkdir -p ~/.npm-global
+        npm config set prefix ~/.npm-global
+
+    - name: Install CLI
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        npm install -g @nsxbet/playwright-orchestrator@${{ steps.version.outputs.version }}
+
+    - name: Add to PATH
+      shell: bash
+      run: |
+        echo "$HOME/.npm-global/bin" >> $GITHUB_PATH
+
+    - name: Verify installation
+      shell: bash
+      run: |
+        playwright-orchestrator --version

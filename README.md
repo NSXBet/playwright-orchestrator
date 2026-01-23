@@ -69,46 +69,58 @@ playwright-orchestrator merge-timing \
 2. **Run Tests**: Each shard runs its assigned tests via `--grep`
 3. **Merge**: Collect timing from all shards, update history with EMA
 
-## GitHub Actions
+## GitHub Actions (External Repositories)
+
+Use the orchestrator in your own repository with these actions:
 
 ```yaml
 jobs:
-  orchestrate:
-    runs-on: ubuntu-24.04
-    outputs:
-      shards: ${{ steps.assign.outputs.shards }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-
-      - name: Restore timing cache
-        uses: actions/cache/restore@v4
-        with:
-          path: timing-data.json
-          key: playwright-timing-${{ github.ref_name }}
-
-      - name: Assign tests
-        id: assign
-        run: |
-          RESULT=$(playwright-orchestrator assign \
-            --test-dir ./e2e \
-            --shards 4 \
-            --timing-file ./timing-data.json \
-            --output-format json)
-          echo "shards=$RESULT" >> $GITHUB_OUTPUT
-
-  test:
-    needs: orchestrate
+  e2e:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
-      # ... run tests with --grep from orchestrate output
+
+      # Install orchestrator CLI
+      - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+
+      # Restore timing cache (you control this)
+      - uses: actions/cache/restore@v4
+        with:
+          path: timing-data.json
+          key: playwright-timing-${{ github.ref_name }}
+          restore-keys: playwright-timing-
+
+      # Assign tests to this shard
+      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+        id: orchestrate
+        with:
+          test-dir: ./e2e
+          shards: 4
+          shard-index: ${{ matrix.shard }}
+          timing-file: timing-data.json
+
+      # Run tests (with fallback to native sharding)
+      - name: Run Playwright
+        run: |
+          if [ "${{ steps.orchestrate.outputs.use-native-sharding }}" = "true" ]; then
+            npx playwright test ${{ steps.orchestrate.outputs.shard-arg }}
+          else
+            npx playwright test --grep "${{ steps.orchestrate.outputs.grep-pattern }}"
+          fi
+
+      # Extract timing (runs on success or failure, not on cancel)
+      - if: success() || failure()
+        uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
+        with:
+          report-file: playwright-report/results.json
+          output-file: timing-shard-${{ matrix.shard }}.json
+          shard: ${{ matrix.shard }}
 ```
 
-See [examples/](./examples/) for complete workflow examples.
+See [docs/external-integration.md](./docs/external-integration.md) for complete workflow with timing data persistence.
 
 ## CLI Commands
 
