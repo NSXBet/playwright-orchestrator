@@ -62,13 +62,14 @@ runs:
 
         # Try to run orchestrator, fallback to native sharding on failure
         set +e
+        ERR_FILE="$(mktemp)"
         RESULT=$(playwright-orchestrator assign \
           --test-dir "${{ inputs.test-dir }}" \
           --shards "${{ inputs.shards }}" \
           --level "${{ inputs.level }}" \
           --glob-pattern "${{ inputs.glob-pattern }}" \
           --output-format json \
-          $TIMING_ARG 2>&1)
+          $TIMING_ARG 2> "$ERR_FILE")
         EXIT_CODE=$?
         set -e
 
@@ -78,21 +79,23 @@ runs:
         # Check if orchestrator failed
         if [ $EXIT_CODE -ne 0 ]; then
           echo "::warning::Orchestrator failed (exit code $EXIT_CODE), falling back to native sharding"
-          echo "::warning::Error output: $RESULT"
+          echo "::warning::Error output: $(cat "$ERR_FILE")"
           echo "use-native-sharding=true" >> $GITHUB_OUTPUT
           echo "shard-arg=--shard=$SHARD_INDEX/$TOTAL_SHARDS" >> $GITHUB_OUTPUT
           echo "grep-pattern=" >> $GITHUB_OUTPUT
           echo "test-count=0" >> $GITHUB_OUTPUT
           echo "expected-duration=0" >> $GITHUB_OUTPUT
           echo "is-optimal=false" >> $GITHUB_OUTPUT
+          rm -f "$ERR_FILE"
           exit 0
         fi
+        rm -f "$ERR_FILE"
 
         # Parse result
-        GREP_PATTERN=$(echo "$RESULT" | jq -r ".grepPatterns[\"$SHARD_INDEX\"] // .grepPatterns[$SHARD_INDEX] // \"\"")
-        TEST_COUNT=$(echo "$RESULT" | jq -r "(.shards[\"$SHARD_INDEX\"] // .shards[$SHARD_INDEX]) | length // 0")
-        EXPECTED_DURATION=$(echo "$RESULT" | jq -r ".expectedDurations[\"$SHARD_INDEX\"] // .expectedDurations[$SHARD_INDEX] // 0")
-        IS_OPTIMAL=$(echo "$RESULT" | jq -r ".isOptimal // false")
+        GREP_PATTERN=$(echo "$RESULT" | jq -r ".grepPatterns[\"$SHARD_INDEX\"] // .grepPatterns[$SHARD_INDEX] // \"\"" 2>/dev/null || echo "")
+        TEST_COUNT=$(echo "$RESULT" | jq -r "(.shards[\"$SHARD_INDEX\"] // .shards[$SHARD_INDEX]) | length // 0" 2>/dev/null || echo "0")
+        EXPECTED_DURATION=$(echo "$RESULT" | jq -r ".expectedDurations[\"$SHARD_INDEX\"] // .expectedDurations[$SHARD_INDEX] // 0" 2>/dev/null || echo "0")
+        IS_OPTIMAL=$(echo "$RESULT" | jq -r ".isOptimal // false" 2>/dev/null || echo "false")
 
         # Check if shard is empty (fallback to native)
         if [ -z "$GREP_PATTERN" ] || [ "$TEST_COUNT" = "0" ]; then

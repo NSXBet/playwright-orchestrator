@@ -78,7 +78,7 @@ jobs:
           npx playwright test --grep "$GREP_PATTERN" || true
 
       - name: Extract timing data
-        if: always()
+        if: success() || failure()
         uses: ./.github/actions/extract-timing
         with:
           report-file: examples/basic/results.json
@@ -86,11 +86,19 @@ jobs:
           shard: ${{ matrix.shard }}
           level: test
 
+      - name: Upload timing artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timing-shard-${{ matrix.shard }}
+          path: timing-shard-${{ matrix.shard }}.json
+          retention-days: 1
+
   merge:
     name: Merge Timing
     needs: test
     runs-on: ubuntu-24.04
-    if: always()
+    if: success() || failure()
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -101,9 +109,16 @@ jobs:
       - name: Build orchestrator
         run: bun run build
 
+      - name: Download timing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: timing-shard-*
+          merge-multiple: true
+
       - name: Merge timing data
         uses: ./.github/actions/merge-timing
         with:
+          new-files: timing-shard-*.json
           output-file: timing.json
           level: test
 

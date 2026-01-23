@@ -1,5 +1,7 @@
 # E2E Test Orchestration
 
+## Requirements
+
 ### Requirement: Test Discovery
 
 The system SHALL discover all tests in a Playwright project.
@@ -102,7 +104,7 @@ The system SHALL merge timing data using Exponential Moving Average (EMA).
 - **AND** new timing artifact with test X (duration: 130s)
 - **AND** alpha = 0.3
 - **WHEN** the `merge-timing` command is executed
-- **THEN** test X duration becomes 109s (0.3 * 130 + 0.7 * 100)
+- **THEN** test X duration becomes 109s (`0.3 * 130 + 0.7 * 100`)
 
 #### Scenario: Prune old entries
 

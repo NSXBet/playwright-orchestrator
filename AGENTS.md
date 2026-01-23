@@ -206,6 +206,68 @@ make act-test  # Runs CI workflow locally with Act
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`
 - PRs require CI to pass (lint, typecheck, test, build)
 
+## External Usage Patterns
+
+The orchestrator is designed to be used by external repositories via GitHub Actions.
+
+### Storage-Agnostic Design
+
+Actions do NOT handle cache/artifacts internally. Users control:
+- Cache keys and paths
+- Artifact upload/download
+- Storage backends (cache, S3, etc.)
+
+```yaml
+# User controls cache - orchestrate action just reads files
+- uses: actions/cache/restore@v4
+  with:
+    path: timing-data.json
+    key: playwright-timing-${{ github.ref_name }}
+
+- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+  with:
+    timing-file: timing-data.json  # User provides the file
+```
+
+### Fallback to Native Sharding
+
+If orchestration fails, workflows should fallback to Playwright's `--shard` flag:
+
+```yaml
+- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+  id: orchestrate
+  with:
+    test-dir: ./e2e
+    shards: 4
+    shard-index: ${{ matrix.shard }}
+
+- name: Run tests
+  run: |
+    if [ "${{ steps.orchestrate.outputs.use-native-sharding }}" = "true" ]; then
+      npx playwright test ${{ steps.orchestrate.outputs.shard-arg }}
+    else
+      npx playwright test --grep "${{ steps.orchestrate.outputs.grep-pattern }}"
+    fi
+```
+
+### Cancellation-Aware Steps
+
+Use `if: success() || failure()` instead of `always()`:
+
+```yaml
+- name: Extract timing
+  if: success() || failure()  # NOT always() - skip on cancel
+  uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
+```
+
+### Key Documentation
+
+| Resource | Purpose |
+|----------|---------|
+| `docs/external-integration.md` | Complete integration guide |
+| `examples/external-workflow.yml` | Copy-paste workflow template |
+| `README.md` | Quick start for external users |
+
 ## Important Files
 
 | File | Purpose |
