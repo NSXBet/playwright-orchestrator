@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup mise
         uses: jdx/mise-action@v2
@@ -40,3 +42,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_PUBLIC_TOKEN }}
+
+      - name: Update GitHub Action tags
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          # Get the published version from changesets output
+          PUBLISHED_PACKAGES='${{ steps.changesets.outputs.publishedPackages }}'
+          VERSION=$(echo "$PUBLISHED_PACKAGES" | jq -r '.[0].version // empty')
+
+          if [ -z "$VERSION" ]; then
+            echo "No version found in published packages"
+            exit 0
+          fi
+
+          echo "Published version: $VERSION"
+
+          # Extract major version (e.g., 1 from 1.2.3)
+          MAJOR_VERSION=$(echo "$VERSION" | cut -d. -f1)
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create/update the full version tag (v1.2.3)
+          FULL_TAG="v$VERSION"
+          echo "Creating tag: $FULL_TAG"
+          git tag -fa "$FULL_TAG" -m "Release $FULL_TAG"
+          git push origin "$FULL_TAG" --force
+
+          # Create/update the major version tag (v1)
+          MAJOR_TAG="v$MAJOR_VERSION"
+          echo "Updating major tag: $MAJOR_TAG -> $FULL_TAG"
+          git tag -fa "$MAJOR_TAG" -m "Release $FULL_TAG"
+          git push origin "$MAJOR_TAG" --force
+
+          echo "Tags updated successfully!"
+          echo "  - $FULL_TAG (exact version)"
+          echo "  - $MAJOR_TAG (tracks latest v$MAJOR_VERSION.x.x)"

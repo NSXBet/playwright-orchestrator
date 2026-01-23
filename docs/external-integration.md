@@ -13,6 +13,14 @@ The orchestrator provides GitHub Actions that you can reference directly in your
 | `extract-timing` | Extract timing from Playwright reports |
 | `merge-timing` | Merge timing data from multiple shards |
 
+## Versioning
+
+Actions are tagged to match the npm package version:
+
+- `@v1` - Latest v1.x.x (recommended for stability)
+- `@v1.2.3` - Exact version (for reproducibility)
+- `@main` - Latest development (not recommended for production)
+
 ## Quick Start
 
 ```yaml
