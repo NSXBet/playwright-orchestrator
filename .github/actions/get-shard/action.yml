@@ -5,6 +5,10 @@ inputs:
   shard-files:
     description: JSON shard assignments from orchestrate action (shard-files output)
     required: true
+  grep-patterns:
+    description: JSON grep patterns from orchestrate action (for test-level distribution)
+    required: false
+    default: ''
   shard-index:
     description: Which shard to get (1-based)
     required: true
@@ -14,7 +18,7 @@ inputs:
 
 outputs:
   test-args:
-    description: Arguments for playwright test command (files or --shard=N/M)
+    description: Arguments for playwright test command (--grep="pattern", files, or --shard=N/M)
     value: ${{ steps.parse.outputs.test-args }}
   has-files:
     description: Whether this shard has orchestrated files
@@ -31,6 +35,7 @@ runs:
       shell: bash
       run: |
         SHARD_FILES='${{ inputs.shard-files }}'
+        GREP_PATTERNS='${{ inputs.grep-patterns }}'
         SHARD_INDEX='${{ inputs.shard-index }}'
         TOTAL='${{ inputs.shards }}'
 
@@ -43,7 +48,13 @@ runs:
           exit 0
         fi
 
-        # Extract files for this shard
+        # Check if we have grep patterns (test-level distribution)
+        PATTERN=""
+        if [ -n "$GREP_PATTERNS" ] && [ "$GREP_PATTERNS" != "{}" ] && [ "$GREP_PATTERNS" != "null" ]; then
+          PATTERN=$(echo "$GREP_PATTERNS" | jq -r ".\"$SHARD_INDEX\" // \"\"")
+        fi
+
+        # Extract files/tests for this shard
         FILES=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" // [] | join(\" \")")
 
         if [ -z "$FILES" ]; then
@@ -51,7 +62,15 @@ runs:
           echo "test-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
           echo "has-files=false" >> $GITHUB_OUTPUT
           echo "file-list=" >> $GITHUB_OUTPUT
+        elif [ -n "$PATTERN" ]; then
+          # Use grep pattern for test-level distribution (avoids shell escaping issues)
+          FILE_COUNT=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" | length")
+          echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT tests (using --grep)"
+          echo "test-args=--grep=\"$PATTERN\"" >> $GITHUB_OUTPUT
+          echo "has-files=true" >> $GITHUB_OUTPUT
+          echo "file-list=$FILES" >> $GITHUB_OUTPUT
         else
+          # Use file list for file-level distribution
           FILE_COUNT=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" | length")
           echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT files"
           echo "test-args=$FILES" >> $GITHUB_OUTPUT

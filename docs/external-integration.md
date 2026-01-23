@@ -59,6 +59,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       shard-files: ${{ steps.orchestrate.outputs.shard-files }}
+      grep-patterns: ${{ steps.orchestrate.outputs.grep-patterns }}
     steps:
       - uses: actions/checkout@v4
 
@@ -113,10 +114,11 @@ jobs:
         id: shard
         with:
           shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+          grep-patterns: ${{ needs.orchestrate.outputs.grep-patterns }}
           shard-index: ${{ matrix.shard }}
           shards: ${{ env.SHARDS }}
 
-      # Just works - either files or --shard=N/M
+      # Just works - --grep="pattern", files, or --shard=N/M
       - name: Run Playwright tests
         run: npx playwright test ${{ steps.shard.outputs.test-args }}
 
@@ -216,7 +218,8 @@ Assigns tests to shards. Omit `shard-index` to output ALL shards (recommended fo
 ```
 
 **Outputs (all-shards mode):**
-- `shard-files`: JSON object with file assignments for all shards
+- `shard-files`: JSON object with file/test assignments for all shards
+- `grep-patterns`: JSON object with grep patterns for all shards (test-level only)
 - `expected-durations`: JSON object with expected durations per shard
 - `use-orchestrator`: Whether orchestration succeeded
 
@@ -229,12 +232,13 @@ Extracts test arguments for a specific shard. Handles parsing and fallback autom
   id: shard
   with:
     shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+    grep-patterns: ${{ needs.orchestrate.outputs.grep-patterns }}  # For test-level
     shard-index: ${{ matrix.shard }}
     shards: 4                 # For fallback to --shard=N/M
 ```
 
 **Outputs:**
-- `test-args`: Arguments for playwright test (files OR `--shard=N/M`)
+- `test-args`: Arguments for playwright test (`--grep="pattern"`, files, or `--shard=N/M`)
 - `has-files`: Whether this shard has orchestrated files
 - `file-list`: Space-separated file list (empty if fallback)
 
