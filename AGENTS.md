@@ -48,6 +48,82 @@ src/
 - Graceful fallback: Always have a fallback path
 - Test coverage: Add tests for new functionality
 
+## Architecture Deep Dive
+
+### Distribution Algorithm
+
+The orchestrator uses a two-phase approach:
+
+1. **CKK Algorithm** (Complete Karmarkar-Karp): Optimal multi-way partitioning using branch-and-bound search. Finds the best possible distribution but may timeout for large inputs.
+
+2. **LPT Algorithm** (Longest Processing Time First): Greedy fallback that's fast but may not be optimal. Sorts tests by duration descending and assigns each to the least-loaded shard.
+
+```
+CKK: O(2^n) worst case, but pruning makes it practical for n < 50
+LPT: O(n log n) - always completes quickly
+```
+
+### Duration Estimation (Cold Start)
+
+When historical timing data is unavailable, the orchestrator estimates durations using a fallback chain:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Estimation Strategy                     │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  1. Same-file average                                   │
+│     └─ If other tests in same file have timing data,   │
+│        use their average duration                       │
+│                                                         │
+│  2. Global average                                      │
+│     └─ If no same-file data, use average of all        │
+│        known test durations                             │
+│                                                         │
+│  3. Default constant (30 seconds)                       │
+│     └─ If no historical data exists at all,            │
+│        assume 30s per test                              │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**First run behavior:**
+- All tests are marked `estimated: true`
+- Distribution is "blind" - based on estimates only
+- Actual timing is collected after run
+
+**Subsequent runs:**
+- Real timing data is loaded from cache
+- EMA smoothing prevents outliers from skewing distribution
+- Distribution improves significantly
+
+### Timing Data Smoothing (EMA)
+
+Exponential Moving Average prevents single slow/fast runs from drastically changing the distribution:
+
+```
+newDuration = α × measuredDuration + (1 - α) × oldDuration
+
+Default α = 0.3 (30% weight on new measurement)
+```
+
+This means:
+- Recent measurements matter more than old ones
+- A single outlier won't dramatically shift estimates
+- Gradual adaptation to changing test durations
+
+### Grep Pattern Generation
+
+To run only specific tests in a shard, the orchestrator generates Playwright `--grep` patterns:
+
+```
+Test IDs: ["login.spec.ts::Auth::should login", "login.spec.ts::Auth::should logout"]
+                ↓
+Grep Pattern: "should login|should logout"
+```
+
+For very long patterns (> 4000 chars), it switches to `--grep-file` strategy.
+
 ## Common Tasks
 
 ### Adding a CLI Command
