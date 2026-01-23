@@ -206,6 +206,89 @@ make act-test  # Runs CI workflow locally with Act
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`
 - PRs require CI to pass (lint, typecheck, test, build)
 
+## External Usage Patterns
+
+The orchestrator is designed to be used by external repositories via GitHub Actions.
+
+### Three-Phase Workflow
+
+The recommended pattern for external users:
+
+```
+┌─────────────────┐     ┌─────────────────────────────────┐     ┌─────────────┐
+│   orchestrate   │────▶│      e2e (matrix: [1,2,3,4])    │────▶│ merge-timing│
+│   (1 job)       │     │  get-shard → Run tests          │     │ (1 job)     │
+└─────────────────┘     └─────────────────────────────────┘     └─────────────┘
+```
+
+1. **orchestrate**: Runs once, outputs shard assignments for ALL shards
+2. **e2e matrix**: Each shard uses `get-shard` action to get test arguments
+3. **merge-timing**: Collects timing data from all shards
+
+### Storage-Agnostic Design
+
+Actions do NOT handle cache/artifacts internally. Users control:
+- Cache keys and paths
+- Artifact upload/download
+- Storage backends (cache, S3, etc.)
+
+```yaml
+# User controls cache - orchestrate action just reads files
+- uses: actions/cache/restore@v4
+  with:
+    path: timing-data.json
+    key: playwright-timing-${{ github.ref_name }}
+
+- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
+  with:
+    timing-file: timing-data.json  # User provides the file
+```
+
+### Key Actions
+
+| Action | Purpose |
+|--------|---------|
+| `setup-orchestrator` | Install and cache the CLI |
+| `orchestrate` | Assign tests to shards (omit `shard-index` for all shards) |
+| `get-shard` | Extract test arguments for a specific shard |
+| `extract-timing` | Extract timing from Playwright reports |
+| `merge-timing` | Merge timing data with EMA smoothing |
+
+### Fallback Behavior
+
+If orchestration fails, workflows should fallback to Playwright's `--shard` flag:
+
+```yaml
+# get-shard action handles this automatically
+- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+  id: shard
+  with:
+    shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+    shard-index: ${{ matrix.shard }}
+    shards: 4
+
+# test-args is either file list OR --shard=N/M
+- run: npx playwright test ${{ steps.shard.outputs.test-args }}
+```
+
+### Cancellation-Aware Steps
+
+Use `if: success() || failure()` instead of `always()`:
+
+```yaml
+- name: Extract timing
+  if: success() || failure()  # NOT always() - skip on cancel
+  uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
+```
+
+### Key Documentation
+
+| Resource | Purpose |
+|----------|---------|
+| `docs/external-integration.md` | Complete integration guide |
+| `examples/external-workflow.yml` | Copy-paste workflow template |
+| `README.md` | Quick start for external users |
+
 ## Important Files
 
 | File | Purpose |

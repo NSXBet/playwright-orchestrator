@@ -9,7 +9,8 @@ The orchestrator provides GitHub Actions that you can reference directly in your
 | Action | Purpose |
 |--------|---------|
 | `setup-orchestrator` | Install and cache the CLI |
-| `orchestrate` | Assign tests to shards |
+| `orchestrate` | Assign tests to shards (outputs all shards when `shard-index` omitted) |
+| `get-shard` | Extract test arguments for a specific shard |
 | `extract-timing` | Extract timing from Playwright reports |
 | `merge-timing` | Merge timing data from multiple shards |
 
@@ -21,44 +22,23 @@ Actions are tagged to match the npm package version:
 - `@v1.2.3` - Exact version (for reproducibility)
 - `@main` - Latest development (not recommended for production)
 
-## Quick Start
+## Workflow Architecture
 
-```yaml
-name: E2E Tests
+The recommended pattern uses **three phases** to avoid redundant orchestration:
 
-on: [push, pull_request]
-
-jobs:
-  e2e:
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
-
-      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
-        id: orchestrate
-        with:
-          test-dir: ./e2e
-          shards: 4
-          shard-index: ${{ matrix.shard }}
-
-      - name: Run Playwright
-        run: |
-          if [ "${{ steps.orchestrate.outputs.use-native-sharding }}" = "true" ]; then
-            npx playwright test ${{ steps.orchestrate.outputs.shard-arg }}
-          else
-            npx playwright test --grep "${{ steps.orchestrate.outputs.grep-pattern }}"
-          fi
+```
+┌─────────────────┐     ┌─────────────────────────────────┐     ┌─────────────┐
+│   orchestrate   │────▶│      e2e (matrix: [1,2,3,4])    │────▶│ merge-timing│
+│   (1 job)       │     │  get-shard → Run tests          │     │ (1 job)     │
+└─────────────────┘     └─────────────────────────────────┘     └─────────────┘
 ```
 
-## Complete Workflow with Timing Data
+**Why three phases?**
+- **Efficiency**: Run CKK algorithm once, not N times (one per shard)
+- **Consistency**: All shards get assignments from the same computation
+- **Simplicity**: Actions handle all parsing and fallback logic
 
-For optimal test distribution, you need to collect and persist timing data:
+## Complete Workflow with Timing Data
 
 ```yaml
 name: E2E Tests
@@ -68,21 +48,24 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  SHARDS: 4
+
 jobs:
-  e2e:
+  # ============================================
+  # Phase 1: Orchestrate (runs once)
+  # ============================================
+  orchestrate:
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
+    outputs:
+      shard-files: ${{ steps.orchestrate.outputs.shard-files }}
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Setup orchestrator CLI
       - name: Setup Orchestrator
         uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
 
-      # 2. Restore cached timing data (YOU control this)
+      # YOU control cache location
       - name: Restore timing cache
         uses: actions/cache/restore@v4
         with:
@@ -92,17 +75,30 @@ jobs:
             playwright-timing-main
             playwright-timing-
 
-      # 3. Assign tests to this shard
+      # Action handles all orchestration logic
       - name: Orchestrate tests
         id: orchestrate
         uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
         with:
           test-dir: ./e2e
-          shards: 4
-          shard-index: ${{ matrix.shard }}
+          shards: ${{ env.SHARDS }}
           timing-file: timing-data.json
+          # No shard-index = outputs ALL shards
 
-      # 4. Setup your project
+  # ============================================
+  # Phase 2: Run tests (parallel matrix)
+  # ============================================
+  e2e:
+    needs: [orchestrate]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup your project (adjust as needed)
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -111,18 +107,24 @@ jobs:
       - run: npm ci
       - run: npx playwright install chromium --with-deps
 
-      # 5. Run tests (with fallback support)
-      - name: Run Playwright
-        run: |
-          if [ "${{ steps.orchestrate.outputs.use-native-sharding }}" = "true" ]; then
-            echo "Using native Playwright sharding"
-            npx playwright test ${{ steps.orchestrate.outputs.shard-arg }}
-          else
-            echo "Using orchestrated distribution (${{ steps.orchestrate.outputs.test-count }} tests)"
-            npx playwright test --grep "${{ steps.orchestrate.outputs.grep-pattern }}"
-          fi
+      # Action handles parsing + fallback
+      - name: Get shard assignment
+        uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+        id: shard
+        with:
+          shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+          shard-index: ${{ matrix.shard }}
+          shards: ${{ env.SHARDS }}
 
-      # 6. Extract timing (runs on success OR failure, NOT on cancel)
+      # Just works - either files or --shard=N/M
+      - name: Run Playwright tests
+        run: npx playwright test ${{ steps.shard.outputs.test-args }}
+
+      # Extract timing (runs unless cancelled)
+      - name: Setup Orchestrator
+        if: success() || failure()
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
+
       - name: Extract timing
         if: success() || failure()
         uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
@@ -130,8 +132,9 @@ jobs:
           report-file: playwright-report/results.json
           output-file: timing-shard-${{ matrix.shard }}.json
           shard: ${{ matrix.shard }}
+          level: file
 
-      # 7. Upload timing artifact (YOU control this)
+      # YOU control artifact location
       - name: Upload timing artifact
         if: success() || failure()
         uses: actions/upload-artifact@v4
@@ -139,9 +142,13 @@ jobs:
           name: timing-shard-${{ matrix.shard }}
           path: timing-shard-${{ matrix.shard }}.json
           retention-days: 1
+          if-no-files-found: ignore
 
+  # ============================================
+  # Phase 3: Merge timing data
+  # ============================================
   merge-timing:
-    needs: e2e
+    needs: [orchestrate, e2e]
     if: success() || failure()
     runs-on: ubuntu-24.04
     steps:
@@ -150,7 +157,7 @@ jobs:
       - name: Setup Orchestrator
         uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v1
 
-      # Restore existing timing data
+      # YOU control cache location
       - name: Restore timing cache
         uses: actions/cache/restore@v4
         with:
@@ -158,22 +165,22 @@ jobs:
           key: playwright-timing-${{ github.ref_name }}
           restore-keys: playwright-timing-
 
-      # Download all shard timing artifacts
+      # YOU control artifact location
       - name: Download timing artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: timing-shard-*
           merge-multiple: true
 
-      # Merge timing data
       - name: Merge timing data
         uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v1
         with:
           existing-file: timing-data.json
           new-files: timing-shard-*.json
           output-file: timing-data.json
+          level: file
 
-      # Save updated timing cache (YOU control this)
+      # YOU control cache location
       - name: Save timing cache
         uses: actions/cache/save@v4
         with:
@@ -195,7 +202,7 @@ Installs and caches the CLI.
 
 ### orchestrate
 
-Assigns tests to shards.
+Assigns tests to shards. Omit `shard-index` to output ALL shards (recommended for three-phase pattern).
 
 ```yaml
 - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v1
@@ -203,19 +210,33 @@ Assigns tests to shards.
   with:
     test-dir: ./e2e           # Required: path to tests
     shards: 4                 # Required: total shard count
-    shard-index: 1            # Required: this shard (1-based)
     timing-file: ''           # Optional: path to timing data
-    level: test               # Optional: 'test' or 'file'
-    glob-pattern: '**/*.spec.ts'  # Optional: test file pattern
+    level: file               # Optional: 'test' or 'file' (file recommended)
+    # shard-index: OMIT for all-shards mode
+```
+
+**Outputs (all-shards mode):**
+- `shard-files`: JSON object with file assignments for all shards
+- `expected-durations`: JSON object with expected durations per shard
+- `use-orchestrator`: Whether orchestration succeeded
+
+### get-shard
+
+Extracts test arguments for a specific shard. Handles parsing and fallback automatically.
+
+```yaml
+- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v1
+  id: shard
+  with:
+    shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+    shard-index: ${{ matrix.shard }}
+    shards: 4                 # For fallback to --shard=N/M
 ```
 
 **Outputs:**
-- `grep-pattern`: Pattern for `--grep` flag
-- `test-count`: Number of tests assigned
-- `expected-duration`: Expected time in ms
-- `is-optimal`: Whether CKK found optimal solution
-- `use-native-sharding`: `true` if should use `--shard` flag
-- `shard-arg`: Native shard argument (e.g., `--shard=1/4`)
+- `test-args`: Arguments for playwright test (files OR `--shard=N/M`)
+- `has-files`: Whether this shard has orchestrated files
+- `file-list`: Space-separated file list (empty if fallback)
 
 ### extract-timing
 
@@ -228,7 +249,7 @@ Extracts timing from Playwright reports.
     output-file: ./timing.json   # Required: output path
     shard: 1                     # Required: shard index
     project: default             # Optional: Playwright project
-    level: test                  # Optional: 'test' or 'file'
+    level: file                  # Optional: 'test' or 'file' (file recommended)
 ```
 
 ### merge-timing
@@ -243,7 +264,7 @@ Merges timing data with EMA smoothing.
     output-file: ./timing.json   # Required: output path
     alpha: '0.3'                 # Optional: EMA factor
     prune-days: '30'             # Optional: remove old entries
-    level: test                  # Optional: 'test' or 'file'
+    level: file                  # Optional: 'test' or 'file' (file recommended)
 ```
 
 ## Fallback Behavior
