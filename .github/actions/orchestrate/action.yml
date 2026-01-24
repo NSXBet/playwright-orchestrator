@@ -2,9 +2,14 @@ name: Orchestrate Playwright Tests
 description: Assign tests to shards using historical timing data (storage-agnostic)
 
 inputs:
+  test-list:
+    description: Path to JSON file with test list (from playwright --list --reporter=json). When provided, skips internal test discovery. This is the recommended approach for CI.
+    required: false
+    default: ''
   test-dir:
-    description: Path to test directory
-    required: true
+    description: Path to test directory (not required when using test-list)
+    required: false
+    default: ''
   shards:
     description: Total number of shards
     required: true
@@ -25,11 +30,11 @@ inputs:
     required: false
     default: '**/*.spec.ts'
   project:
-    description: Playwright project name (for accurate test discovery with parameterized tests)
+    description: Playwright project name (only used when test-list is not provided)
     required: false
     default: ''
   config-dir:
-    description: Directory where playwright.config.ts is located (defaults to test-dir)
+    description: Directory where playwright.config.ts is located (only used when test-list is not provided)
     required: false
     default: ''
 
@@ -76,17 +81,42 @@ runs:
       run: |
         SHARD_INDEX="${{ inputs.shard-index }}"
         TOTAL_SHARDS="${{ inputs.shards }}"
+        TEST_LIST="${{ inputs.test-list }}"
         PROJECT="${{ inputs.project }}"
         CONFIG_DIR="${{ inputs.config-dir }}"
 
         # Build command arguments as array to handle spaces correctly
         CMD_ARGS=(
-          --test-dir "${{ inputs.test-dir }}"
           --shards "$TOTAL_SHARDS"
           --level "${{ inputs.level }}"
-          --glob-pattern "${{ inputs.glob-pattern }}"
           --output-format json
         )
+
+        # Use test-list if provided (recommended for CI)
+        if [ -n "$TEST_LIST" ] && [ -f "$TEST_LIST" ]; then
+          CMD_ARGS+=(--test-list "$TEST_LIST")
+          echo "Using pre-generated test list from $TEST_LIST"
+        else
+          # Fall back to test discovery (requires test-dir)
+          if [ -z "${{ inputs.test-dir }}" ]; then
+            echo "::error::Either test-list or test-dir must be provided"
+            exit 1
+          fi
+          CMD_ARGS+=(--test-dir "${{ inputs.test-dir }}")
+          CMD_ARGS+=(--glob-pattern "${{ inputs.glob-pattern }}")
+          
+          # Add project if specified
+          if [ -n "$PROJECT" ]; then
+            CMD_ARGS+=(--project "$PROJECT")
+            echo "Using Playwright project: $PROJECT"
+          fi
+
+          # Add config-dir if specified
+          if [ -n "$CONFIG_DIR" ]; then
+            CMD_ARGS+=(--config-dir "$CONFIG_DIR")
+            echo "Using Playwright config from: $CONFIG_DIR"
+          fi
+        fi
 
         # Add timing file if available
         if [ -n "${{ inputs.timing-file }}" ] && [ -f "${{ inputs.timing-file }}" ]; then
@@ -94,18 +124,6 @@ runs:
           echo "Using timing data from ${{ inputs.timing-file }}"
         else
           echo "No timing data available, using estimation"
-        fi
-
-        # Add project if specified
-        if [ -n "$PROJECT" ]; then
-          CMD_ARGS+=(--project "$PROJECT")
-          echo "Using Playwright project: $PROJECT"
-        fi
-
-        # Add config-dir if specified
-        if [ -n "$CONFIG_DIR" ]; then
-          CMD_ARGS+=(--config-dir "$CONFIG_DIR")
-          echo "Using Playwright config from: $CONFIG_DIR"
         fi
 
         # Try to run orchestrator
