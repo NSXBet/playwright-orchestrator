@@ -125,6 +125,8 @@ export interface TestAssignResult {
   shards: Record<number, string[]>;
   /** Map of shard index to grep pattern */
   grepPatterns: Record<number, string>;
+  /** Map of shard index to test locations (file:line format) */
+  testLocations: Record<number, string[]>;
   /** Expected duration per shard */
   expectedDurations: Record<number, number>;
   /** Total number of tests */
@@ -171,6 +173,10 @@ export interface DiscoveredTest {
   titlePath: string[];
   /** Unique test ID: file::describe::testTitle */
   testId: string;
+  /** Line number in source file */
+  line: number;
+  /** Column number in source file */
+  column: number;
 }
 
 /**
@@ -262,6 +268,14 @@ export function createEmptyTimingDataV1(): TimingDataV1 {
  */
 export function buildTestId(file: string, titlePath: string[]): string {
   return [file, ...titlePath].join('::');
+}
+
+/**
+ * Build a test location from file and line
+ * Format: file:line (used for exact test filtering in Playwright)
+ */
+export function buildTestLocation(file: string, line: number): string {
+  return `${file}:${line}`;
 }
 
 /**

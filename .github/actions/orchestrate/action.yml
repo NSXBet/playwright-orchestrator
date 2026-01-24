@@ -65,6 +65,9 @@ outputs:
   grep-patterns:
     description: JSON object with grep patterns for all shards (test-level only)
     value: ${{ steps.assign.outputs.grep-patterns }}
+  test-locations:
+    description: JSON object with test locations (file:line format) for all shards - recommended for exact test filtering
+    value: ${{ steps.assign.outputs.test-locations }}
   expected-durations:
     description: JSON object with expected durations for all shards
     value: ${{ steps.assign.outputs.expected-durations }}
@@ -150,6 +153,7 @@ runs:
           echo "use-orchestrator=false" >> $GITHUB_OUTPUT
           echo "shard-files={}" >> $GITHUB_OUTPUT
           echo "grep-patterns={}" >> $GITHUB_OUTPUT
+          echo "test-locations={}" >> $GITHUB_OUTPUT
           echo "expected-durations={}" >> $GITHUB_OUTPUT
           
           # Single-shard outputs (legacy)
@@ -171,6 +175,7 @@ runs:
         echo "use-orchestrator=true" >> $GITHUB_OUTPUT
         echo "shard-files=$(echo "$RESULT" | jq -c '.shards')" >> $GITHUB_OUTPUT
         echo "grep-patterns=$(echo "$RESULT" | jq -c '.grepPatterns // {}')" >> $GITHUB_OUTPUT
+        echo "test-locations=$(echo "$RESULT" | jq -c '.testLocations // {}')" >> $GITHUB_OUTPUT
         echo "expected-durations=$(echo "$RESULT" | jq -c '.expectedDurations')" >> $GITHUB_OUTPUT
 
         # If shard-index provided, also output single-shard data (legacy mode)

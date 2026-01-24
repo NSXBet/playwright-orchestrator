@@ -4,6 +4,7 @@ import { glob } from 'glob';
 import {
   assignWithCKK,
   assignWithLPT,
+  buildTestLocation,
   DEFAULT_CKK_TIMEOUT,
   DEFAULT_MS_PER_LINE,
   type DiscoveredTest,
@@ -188,6 +189,9 @@ export default class Assign extends Command {
           grepPatterns: Object.fromEntries(
             Array.from({ length: flags.shards }, (_, i) => [i + 1, '']),
           ),
+          testLocations: Object.fromEntries(
+            Array.from({ length: flags.shards }, (_, i) => [i + 1, []]),
+          ),
           expectedDurations: Object.fromEntries(
             Array.from({ length: flags.shards }, (_, i) => [i + 1, 0]),
           ),
@@ -245,7 +249,7 @@ export default class Assign extends Command {
       this.log(`Makespan: ${this.formatDuration(ckkResult.makespan)}`);
     }
 
-    // Generate grep patterns
+    // Generate grep patterns and test locations
     const shardTests: Record<number, string[]> = {};
     for (const assignment of ckkResult.assignments) {
       shardTests[assignment.shardIndex] = assignment.tests;
@@ -253,10 +257,31 @@ export default class Assign extends Command {
 
     const grepPatterns = generateGrepPatterns(shardTests);
 
+    // Build testId to test lookup for generating test locations
+    const testById = new Map<string, DiscoveredTest>();
+    for (const test of tests) {
+      testById.set(test.testId, test);
+    }
+
+    // Generate test locations (file:line format) for exact test filtering
+    const testLocations: Record<number, string[]> = {};
+    for (const [shardIndex, testIds] of Object.entries(shardTests)) {
+      testLocations[Number(shardIndex)] = testIds
+        .map((testId) => {
+          const test = testById.get(testId);
+          if (test) {
+            return buildTestLocation(test.file, test.line);
+          }
+          return null;
+        })
+        .filter((loc): loc is string => loc !== null);
+    }
+
     // Build result
     const result: TestAssignResult = {
       shards: shardTests,
       grepPatterns,
+      testLocations,
       expectedDurations: Object.fromEntries(
         ckkResult.assignments.map((a) => [a.shardIndex, a.expectedDuration]),
       ),
@@ -382,6 +407,13 @@ export default class Assign extends Command {
           this.log(`  grep: "${grepPattern}"`);
         } else if (grepPattern) {
           this.log(`  grep: (${grepPattern.length} chars, use --grep-file)`);
+        }
+
+        const locations = result.testLocations[Number(shard)];
+        if (locations && locations.length > 0 && locations.length <= 5) {
+          this.log(`  locations: ${locations.join(' ')}`);
+        } else if (locations && locations.length > 5) {
+          this.log(`  locations: ${locations.length} file:line entries`);
         }
         this.log('');
       }

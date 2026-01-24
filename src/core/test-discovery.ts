@@ -115,6 +115,8 @@ function extractTestsFromSuite(
         title: spec.title,
         titlePath,
         testId: buildTestId(file, titlePath),
+        line: spec.line,
+        column: spec.column,
       });
     }
   }
@@ -225,11 +227,19 @@ export function parseTestsFromSource(
     }
     titlePath.push(testTitle);
 
+    // Calculate line number from position (1-based)
+    const line = source.substring(0, testPos).split('\n').length;
+    // Calculate column (1-based, position within the line)
+    const lastNewline = source.lastIndexOf('\n', testPos - 1);
+    const column = testPos - lastNewline;
+
     tests.push({
       file: fileName,
       title: testTitle,
       titlePath,
       testId: buildTestId(fileName, titlePath),
+      line,
+      column,
     });
   }
 
