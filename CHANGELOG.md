@@ -1,5 +1,25 @@
 # @nsxbet/playwright-orchestrator
 
+## 0.2.2
+
+### Patch Changes
+
+- [#8](https://github.com/NSXBet/playwright-orchestrator/pull/8) [`52c1fb5`](https://github.com/NSXBet/playwright-orchestrator/commit/52c1fb5a8520c3d0aa249e74d877e6d28dcc58e5) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Fix test discovery to use Playwright --list instead of regex parsing
+
+  The `assign` command was always using the fallback regex-based file parser (`discoverTestsFromFiles`) instead of using Playwright's `--list` command (`discoverTests`). This caused:
+
+  - Parameterized tests (using `test.each`, data-driven tests) to not be expanded
+  - Tests with template literals in names (e.g., `${variable}`) to appear as single tests
+  - Significant undercounting of tests (e.g., 88 discovered vs 177 actual tests)
+
+  Changes:
+
+  - `assign` command now tries `discoverTests()` (Playwright --list) first for accurate test discovery
+  - Falls back to `discoverTestsFromFiles()` only if Playwright --list fails
+  - Added `--project` flag to filter by Playwright project name
+  - Added `--use-fallback` flag to force the old regex-based behavior if needed
+  - Updated `orchestrate` action to accept and pass `project` parameter
+
 ## 0.2.1
 
 ### Patch Changes
