@@ -1,5 +1,15 @@
 # @nsxbet/playwright-orchestrator
 
+## 0.4.1
+
+### Patch Changes
+
+- [`3b3b6a0`](https://github.com/NSXBet/playwright-orchestrator/commit/3b3b6a0546ab4a7824b7bb3a787e98effd670662) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Fix grep patterns to use full title path for exact test matching
+
+  - Use full title path (e.g., "describe › test title") instead of just test title
+  - This fixes duplicate test matching for tests with the same name in different describe blocks
+  - get-shard action now prefers grep patterns over file:line locations (file:line doesn't work reliably for parameterized tests)
+
 ## 0.4.0
 
 ### Minor Changes
