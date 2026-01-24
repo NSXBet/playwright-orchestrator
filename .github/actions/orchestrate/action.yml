@@ -70,34 +70,36 @@ runs:
       id: assign
       shell: bash
       run: |
-        # Build timing-file argument
-        TIMING_ARG=""
+        SHARD_INDEX="${{ inputs.shard-index }}"
+        TOTAL_SHARDS="${{ inputs.shards }}"
+        PROJECT="${{ inputs.project }}"
+
+        # Build command arguments as array to handle spaces correctly
+        CMD_ARGS=(
+          --test-dir "${{ inputs.test-dir }}"
+          --shards "$TOTAL_SHARDS"
+          --level "${{ inputs.level }}"
+          --glob-pattern "${{ inputs.glob-pattern }}"
+          --output-format json
+        )
+
+        # Add timing file if available
         if [ -n "${{ inputs.timing-file }}" ] && [ -f "${{ inputs.timing-file }}" ]; then
-          TIMING_ARG="--timing-file ${{ inputs.timing-file }}"
+          CMD_ARGS+=(--timing-file "${{ inputs.timing-file }}")
           echo "Using timing data from ${{ inputs.timing-file }}"
         else
           echo "No timing data available, using estimation"
         fi
 
-        SHARD_INDEX="${{ inputs.shard-index }}"
-        TOTAL_SHARDS="${{ inputs.shards }}"
-
-        # Build project argument
-        PROJECT_ARG=""
-        if [ -n "${{ inputs.project }}" ]; then
-          PROJECT_ARG="--project \"${{ inputs.project }}\""
-          echo "Using Playwright project: ${{ inputs.project }}"
+        # Add project if specified
+        if [ -n "$PROJECT" ]; then
+          CMD_ARGS+=(--project "$PROJECT")
+          echo "Using Playwright project: $PROJECT"
         fi
 
         # Try to run orchestrator
         set +e
-        RESULT=$(playwright-orchestrator assign \
-          --test-dir "${{ inputs.test-dir }}" \
-          --shards "$TOTAL_SHARDS" \
-          --level "${{ inputs.level }}" \
-          --glob-pattern "${{ inputs.glob-pattern }}" \
-          --output-format json \
-          $TIMING_ARG $PROJECT_ARG 2>&1)
+        RESULT=$(playwright-orchestrator assign "${CMD_ARGS[@]}" 2>&1)
         EXIT_CODE=$?
         set -e
 
