@@ -57,16 +57,16 @@ runs:
           exit 0
         fi
 
-        # Check if we have test locations (preferred - exact matching with file:line format)
-        LOCATIONS=""
-        if [ -n "$TEST_LOCATIONS" ] && [ "$TEST_LOCATIONS" != "{}" ] && [ "$TEST_LOCATIONS" != "null" ]; then
-          LOCATIONS=$(echo "$TEST_LOCATIONS" | jq -r ".\"$SHARD_INDEX\" // [] | join(\" \")")
-        fi
-
-        # Check if we have grep patterns (legacy fallback)
+        # Check if we have grep patterns (preferred - uses full title path for exact matching)
         PATTERN=""
         if [ -n "$GREP_PATTERNS" ] && [ "$GREP_PATTERNS" != "{}" ] && [ "$GREP_PATTERNS" != "null" ]; then
           PATTERN=$(echo "$GREP_PATTERNS" | jq -r ".\"$SHARD_INDEX\" // \"\"")
+        fi
+
+        # Check if we have test locations (fallback - doesn't work well for parameterized tests)
+        LOCATIONS=""
+        if [ -n "$TEST_LOCATIONS" ] && [ "$TEST_LOCATIONS" != "{}" ] && [ "$TEST_LOCATIONS" != "null" ]; then
+          LOCATIONS=$(echo "$TEST_LOCATIONS" | jq -r ".\"$SHARD_INDEX\" // [] | join(\" \")")
         fi
 
         # Extract files/tests for this shard (for logging)
@@ -78,18 +78,10 @@ runs:
           echo "has-files=false" >> $GITHUB_OUTPUT
           echo "file-list=" >> $GITHUB_OUTPUT
           echo "grep-file=" >> $GITHUB_OUTPUT
-        elif [ -n "$LOCATIONS" ]; then
-          # Use test locations for exact test filtering (recommended)
-          TEST_COUNT=$(echo "$TEST_LOCATIONS" | jq -r ".\"$SHARD_INDEX\" | length")
-          echo "::notice::Shard $SHARD_INDEX has $TEST_COUNT tests (using file:line locations)"
-          echo "test-args=$LOCATIONS" >> $GITHUB_OUTPUT
-          echo "has-files=true" >> $GITHUB_OUTPUT
-          echo "file-list=$FILES" >> $GITHUB_OUTPUT
-          echo "grep-file=" >> $GITHUB_OUTPUT
         elif [ -n "$PATTERN" ]; then
-          # Legacy: Write grep pattern to file to avoid shell escaping issues with | character
+          # Use grep pattern with full title path for exact test filtering
           FILE_COUNT=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" | length")
-          echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT tests (using grep pattern - legacy)"
+          echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT tests (using grep pattern)"
           
           # Save pattern to file (use absolute path so it works from any working-directory)
           GREP_FILE="$GITHUB_WORKSPACE/playwright-grep-shard-$SHARD_INDEX.txt"
@@ -99,6 +91,14 @@ runs:
           echo "test-args=" >> $GITHUB_OUTPUT
           echo "has-files=true" >> $GITHUB_OUTPUT
           echo "file-list=$FILES" >> $GITHUB_OUTPUT
+        elif [ -n "$LOCATIONS" ]; then
+          # Fallback: Use test locations (note: doesn't work well for parameterized tests)
+          TEST_COUNT=$(echo "$TEST_LOCATIONS" | jq -r ".\"$SHARD_INDEX\" | length")
+          echo "::notice::Shard $SHARD_INDEX has $TEST_COUNT tests (using file:line locations)"
+          echo "test-args=$LOCATIONS" >> $GITHUB_OUTPUT
+          echo "has-files=true" >> $GITHUB_OUTPUT
+          echo "file-list=$FILES" >> $GITHUB_OUTPUT
+          echo "grep-file=" >> $GITHUB_OUTPUT
         else
           # Use file list for file-level distribution
           FILE_COUNT=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" | length")

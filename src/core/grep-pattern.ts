@@ -33,9 +33,23 @@ export function extractTitleFromTestId(testId: string): string {
 }
 
 /**
+ * Extract the full title path from a test ID
+ * The full title path includes all describe blocks and test title,
+ * joined with ' › ' as Playwright does internally.
+ *
+ * @param testId - Test ID in format file::describe::testTitle
+ * @returns The full title path (e.g., "BetSlip v2 › should show message")
+ */
+export function extractFullTitleFromTestId(testId: string): string {
+  const { titlePath } = parseTestId(testId);
+  return titlePath.join(' › ') || testId;
+}
+
+/**
  * Generate a grep pattern from a list of test IDs
  *
- * Uses the test title (last part of titlePath) for matching.
+ * Uses the full title path (describe blocks + test title) for matching.
+ * This ensures exact matching even for tests with the same name in different describe blocks.
  * Escapes regex special characters to ensure exact matching.
  *
  * @param testIds - List of test IDs to include in pattern
@@ -47,8 +61,8 @@ export function generateGrepPattern(testIds: string[]): string {
   }
 
   const titles = testIds.map((id) => {
-    const title = extractTitleFromTestId(id);
-    return escapeRegex(title);
+    const fullTitle = extractFullTitleFromTestId(id);
+    return escapeRegex(fullTitle);
   });
 
   // Use OR operator to match any of the titles
@@ -87,12 +101,12 @@ export function isPatternTooLong(pattern: string): boolean {
  * Generate content for a grep-file (one pattern per line)
  *
  * @param testIds - List of test IDs
- * @returns File content with one escaped title per line
+ * @returns File content with one escaped full title per line
  */
 export function generateGrepFileContent(testIds: string[]): string {
   const titles = testIds.map((id) => {
-    const title = extractTitleFromTestId(id);
-    return escapeRegex(title);
+    const fullTitle = extractFullTitleFromTestId(id);
+    return escapeRegex(fullTitle);
   });
 
   return titles.join('\n');

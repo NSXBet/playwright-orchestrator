@@ -52,12 +52,13 @@ describe('extractTitleFromTestId', () => {
 });
 
 describe('generateGrepPattern', () => {
-  test('generates pattern for single test', () => {
+  test('generates pattern with full title path for single test', () => {
     const pattern = generateGrepPattern(['file.spec.ts::describe::test title']);
-    expect(pattern).toBe('test title');
+    // Full title path: "describe › test title"
+    expect(pattern).toBe('describe › test title');
   });
 
-  test('generates pattern for multiple tests', () => {
+  test('generates pattern with full title path for multiple tests', () => {
     const pattern = generateGrepPattern([
       'a.spec.ts::test 1',
       'b.spec.ts::test 2',
@@ -65,12 +66,14 @@ describe('generateGrepPattern', () => {
     expect(pattern).toBe('test 1|test 2');
   });
 
-  test('escapes regex special characters', () => {
+  test('escapes regex special characters in full title path', () => {
     const pattern = generateGrepPattern([
-      'file.spec.ts::test (with parens)',
-      'file.spec.ts::test.with.dots',
+      'file.spec.ts::describe::test (with parens)',
+      'file.spec.ts::describe::test.with.dots',
     ]);
-    expect(pattern).toBe('test \\(with parens\\)|test\\.with\\.dots');
+    expect(pattern).toBe(
+      'describe › test \\(with parens\\)|describe › test\\.with\\.dots',
+    );
   });
 
   test('returns empty string for empty input', () => {
@@ -79,16 +82,16 @@ describe('generateGrepPattern', () => {
 });
 
 describe('generateGrepPatterns', () => {
-  test('generates patterns for multiple shards', () => {
+  test('generates patterns with full title paths for multiple shards', () => {
     const shardTests = {
-      1: ['a.spec.ts::test1', 'a.spec.ts::test2'],
-      2: ['b.spec.ts::test3'],
+      1: ['a.spec.ts::describe::test1', 'a.spec.ts::describe::test2'],
+      2: ['b.spec.ts::suite::test3'],
     };
 
     const patterns = generateGrepPatterns(shardTests);
 
-    expect(patterns[1]).toBe('test1|test2');
-    expect(patterns[2]).toBe('test3');
+    expect(patterns[1]).toBe('describe › test1|describe › test2');
+    expect(patterns[2]).toBe('suite › test3');
   });
 });
 
@@ -104,27 +107,27 @@ describe('isPatternTooLong', () => {
 });
 
 describe('generateGrepFileContent', () => {
-  test('generates one title per line', () => {
+  test('generates one full title path per line', () => {
     const content = generateGrepFileContent([
-      'a.spec.ts::test1',
-      'b.spec.ts::test2',
+      'a.spec.ts::describe::test1',
+      'b.spec.ts::suite::test2',
     ]);
-    expect(content).toBe('test1\ntest2');
+    expect(content).toBe('describe › test1\nsuite › test2');
   });
 
   test('escapes regex characters in file content', () => {
     const content = generateGrepFileContent([
-      'file.spec.ts::test (with parens)',
+      'file.spec.ts::describe::test (with parens)',
     ]);
-    expect(content).toBe('test \\(with parens\\)');
+    expect(content).toBe('describe › test \\(with parens\\)');
   });
 });
 
 describe('determineGrepStrategy', () => {
   test('returns pattern strategy for short list', () => {
-    const result = determineGrepStrategy(['a.spec.ts::test1']);
+    const result = determineGrepStrategy(['a.spec.ts::describe::test1']);
     expect(result.strategy).toBe('pattern');
-    expect(result.content).toBe('test1');
+    expect(result.content).toBe('describe › test1');
   });
 
   test('returns file strategy for long list', () => {
@@ -132,13 +135,12 @@ describe('determineGrepStrategy', () => {
     const longTitle = 'a'.repeat(100);
     const testIds = Array.from(
       { length: 50 },
-      (_, i) => `file.spec.ts::${longTitle}${i}`,
+      (_, i) => `file.spec.ts::describe::${longTitle}${i}`,
     );
 
     const result = determineGrepStrategy(testIds);
 
-    // With 50 titles of ~100 chars each, the pattern would be ~5100 chars
-    // which exceeds MAX_GREP_PATTERN_LENGTH (4000)
+    // With 50 titles of ~100+ chars each, the pattern would exceed MAX_GREP_PATTERN_LENGTH (4000)
     expect(result.strategy).toBe('file');
     expect(result.content).toContain('\n');
   });
