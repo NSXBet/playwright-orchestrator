@@ -84,6 +84,7 @@ jobs:
           test-dir: ./e2e
           shards: ${{ env.SHARDS }}
           timing-file: timing-data.json
+          project: chromium  # Recommended for accurate parameterized test discovery
           # No shard-index = outputs ALL shards
 
   # ============================================
@@ -214,8 +215,11 @@ Assigns tests to shards. Omit `shard-index` to output ALL shards (recommended fo
     shards: 4                 # Required: total shard count
     timing-file: ''           # Optional: path to timing data
     level: file               # Optional: 'test' or 'file' (file recommended)
+    project: ''               # Optional: Playwright project name (recommended for accurate discovery)
     # shard-index: OMIT for all-shards mode
 ```
+
+**Note**: The `project` parameter is recommended when using `level: test` to ensure accurate discovery of parameterized tests (e.g., `test.each`). Without it, some tests may not be discovered correctly.
 
 **Outputs (all-shards mode):**
 - `shard-files`: JSON object with file/test assignments for all shards

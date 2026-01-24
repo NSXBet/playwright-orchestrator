@@ -31,14 +31,15 @@ Result: All shards finish at roughly the same time.
 # Install
 bun add -D @nsxbet/playwright-orchestrator
 
-# Discover tests
-playwright-orchestrator list-tests --test-dir ./e2e
+# Discover tests (uses Playwright --list for accurate discovery)
+playwright-orchestrator list-tests --test-dir ./e2e --project "Mobile Chrome"
 
 # Assign tests to shards (with timing data)
 playwright-orchestrator assign \
   --test-dir ./e2e \
   --timing-file ./timing-data.json \
-  --shards 4
+  --shards 4 \
+  --project "Mobile Chrome"  # Recommended for accurate test discovery
 
 # Extract timing from report
 playwright-orchestrator extract-timing \
@@ -98,6 +99,7 @@ jobs:
           test-dir: ./e2e
           shards: 4
           timing-file: timing-data.json
+          project: Mobile Chrome  # Recommended for accurate parameterized test discovery
           # No shard-index = outputs ALL shards
 
   # Phase 2: Run tests (parallel matrix)
@@ -129,12 +131,14 @@ See [docs/external-integration.md](./docs/external-integration.md) for complete 
 
 | Command | Description |
 |---------|-------------|
-| `list-tests` | Discover tests in a project |
-| `assign` | Distribute tests across shards |
+| `list-tests` | Discover tests in a project (uses Playwright `--list`) |
+| `assign` | Distribute tests across shards (uses Playwright `--list` for accurate discovery) |
 | `extract-timing` | Extract timing from Playwright report |
 | `merge-timing` | Merge timing data with EMA smoothing |
 
 Run `playwright-orchestrator <command> --help` for details.
+
+**Important**: The `--project` flag is recommended for both `list-tests` and `assign` commands to ensure accurate test discovery, especially for parameterized tests (e.g., `test.each`).
 
 ## Development
 
