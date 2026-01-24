@@ -1,6 +1,6 @@
 {
   "name": "@nsxbet/playwright-orchestrator",
-  "version": "0.4.0",
+  "version": "0.3.0",
   "description": "Intelligent Playwright test distribution across CI shards using historical timing data",
   "type": "module",
   "main": "dist/index.js",

@@ -1,36 +1,5 @@
 # @nsxbet/playwright-orchestrator
 
-## 0.4.0
-
-### Minor Changes
-
-- Add `testLocations` output for exact test filtering using file:line format
-
-  The orchestrator now outputs test locations in Playwright's native `file:line` format,
-  which guarantees 100% accurate test matching without duplicates.
-
-  Changes:
-  - Add `line` and `column` fields to `DiscoveredTest` interface
-  - Add `testLocations` output to assign command (alongside existing `grepPatterns`)
-  - Add `test-locations` output to orchestrate action
-  - Update get-shard action to prefer `test-locations` over `grep-patterns`
-
-  This fixes the issue where grep patterns could match multiple tests with the same
-  title in different files or describe blocks, resulting in more tests running than expected.
-
-  Usage (automatic when using orchestrate + get-shard actions):
-  ```yaml
-  - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
-    with:
-      test-locations: ${{ needs.orchestrate.outputs.test-locations }}
-      # ... other inputs
-  ```
-
-  The `test-args` output will now contain file:line locations like:
-  ```
-  account.spec.ts:6 account.spec.ts:17 betslip.spec.ts:42
-  ```
-
 ## 0.3.0
 
 ### Minor Changes
