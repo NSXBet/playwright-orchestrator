@@ -67,8 +67,8 @@ runs:
           FILE_COUNT=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" | length")
           echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT tests (using --grep-file)"
           
-          # Write pattern to file, converting | to newlines for grep-file format
-          GREP_FILE="playwright-grep-shard-$SHARD_INDEX.txt"
+          # Write pattern to file using absolute path (so it works from any working-directory)
+          GREP_FILE="$GITHUB_WORKSPACE/playwright-grep-shard-$SHARD_INDEX.txt"
           echo "$PATTERN" | tr '|' '\n' > "$GREP_FILE"
           
           echo "test-args=--grep-file=$GREP_FILE" >> $GITHUB_OUTPUT
