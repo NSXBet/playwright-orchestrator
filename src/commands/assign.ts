@@ -6,6 +6,8 @@ import {
   assignWithLPT,
   DEFAULT_CKK_TIMEOUT,
   DEFAULT_MS_PER_LINE,
+  type DiscoveredTest,
+  discoverTests,
   discoverTestsFromFiles,
   estimateDuration,
   type FileWithDuration,
@@ -45,6 +47,10 @@ export default class Assign extends Command {
       description: 'Number of shards to distribute tests across',
       required: true,
     }),
+    project: Flags.string({
+      char: 'p',
+      description: 'Playwright project name (for accurate test discovery)',
+    }),
     'output-format': Flags.string({
       char: 'f',
       description: 'Output format',
@@ -74,6 +80,11 @@ export default class Assign extends Command {
       description: 'CKK algorithm timeout in milliseconds (test-level only)',
       default: DEFAULT_CKK_TIMEOUT,
     }),
+    'use-fallback': Flags.boolean({
+      description:
+        'Use file parsing instead of Playwright --list for test discovery',
+      default: false,
+    }),
   };
 
   async run(): Promise<void> {
@@ -83,7 +94,11 @@ export default class Assign extends Command {
     const pattern = flags['glob-pattern'];
 
     if (flags.level === 'test') {
-      await this.runTestLevel(testDir, pattern, flags);
+      await this.runTestLevel(testDir, pattern, {
+        ...flags,
+        project: flags.project,
+        'use-fallback': flags['use-fallback'],
+      });
     } else {
       await this.runFileLevel(testDir, pattern, flags);
     }
@@ -99,10 +114,38 @@ export default class Assign extends Command {
       verbose: boolean;
       timeout: number;
       'glob-pattern': string;
+      project?: string;
+      'use-fallback': boolean;
     },
   ): Promise<void> {
-    // Discover tests
-    const tests = discoverTestsFromFiles(testDir, pattern);
+    // Discover tests - prefer Playwright --list for accurate discovery
+    let tests: DiscoveredTest[];
+
+    if (flags['use-fallback']) {
+      // Explicit fallback requested
+      tests = discoverTestsFromFiles(testDir, pattern);
+      if (flags.verbose) {
+        this.log('Using file parsing for test discovery (--use-fallback)');
+      }
+    } else {
+      try {
+        // Try Playwright --list first (handles parameterized tests correctly)
+        tests = discoverTests(testDir, flags.project);
+        if (flags.verbose) {
+          this.log(
+            'Using Playwright --list for test discovery (accurate, includes parameterized tests)',
+          );
+        }
+      } catch {
+        // Fallback to file parsing if Playwright --list fails
+        if (flags.verbose) {
+          this.warn(
+            'Playwright --list failed, falling back to file parsing (may miss parameterized tests)',
+          );
+        }
+        tests = discoverTestsFromFiles(testDir, pattern);
+      }
+    }
 
     if (tests.length === 0) {
       this.warn(`No tests found in ${testDir} matching ${pattern}`);

@@ -249,10 +249,25 @@ Actions do NOT handle cache/artifacts internally. Users control:
 | Action | Purpose |
 |--------|---------|
 | `setup-orchestrator` | Install and cache the CLI |
-| `orchestrate` | Assign tests to shards (omit `shard-index` for all shards) |
+| `orchestrate` | Assign tests to shards (omit `shard-index` for all shards, use `project` for accurate discovery) |
 | `get-shard` | Extract test arguments for a specific shard |
 | `extract-timing` | Extract timing from Playwright reports |
 | `merge-timing` | Merge timing data with EMA smoothing |
+
+### Test Discovery
+
+The orchestrator uses Playwright's `--list` command for accurate test discovery. This properly handles:
+- Parameterized tests (`test.each`, data-driven tests)
+- Template literals in test names (e.g., `${variable}`)
+- All test syntax patterns
+
+**Important**: Always pass the `--project` flag to `assign` and `list-tests` commands for accurate discovery:
+
+```bash
+playwright-orchestrator assign --test-dir ./e2e --shards 4 --project "Mobile Chrome"
+```
+
+The regex-based fallback (`--use-fallback`) should only be used if Playwright `--list` is unavailable.
 
 ### Fallback Behavior
 
