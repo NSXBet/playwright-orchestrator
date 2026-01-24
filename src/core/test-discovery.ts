@@ -12,21 +12,26 @@ import { buildTestId } from './types.js';
 /**
  * Discover tests by running Playwright with --list flag
  *
- * @param testDir - Path to test directory
+ * @param testDir - Path to test directory (used for fallback discovery)
  * @param project - Optional Playwright project name
+ * @param configDir - Optional directory where playwright.config.ts is located (defaults to testDir)
  * @returns List of discovered tests
  */
 export function discoverTests(
   testDir: string,
   project?: string,
+  configDir?: string,
 ): DiscoveredTest[] {
   const projectFlag = project ? `--project="${project}"` : '';
   const cmd =
     `npx playwright test --list --reporter=json ${projectFlag}`.trim();
 
+  // Run Playwright from the config directory (where playwright.config.ts is located)
+  const cwd = configDir || testDir;
+
   try {
     const output = execSync(cmd, {
-      cwd: testDir,
+      cwd,
       encoding: 'utf-8',
       maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large test suites
       stdio: ['pipe', 'pipe', 'pipe'],
