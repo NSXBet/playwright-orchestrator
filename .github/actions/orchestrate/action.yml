@@ -24,6 +24,10 @@ inputs:
     description: Glob pattern for test files
     required: false
     default: '**/*.spec.ts'
+  project:
+    description: Playwright project name (for accurate test discovery with parameterized tests)
+    required: false
+    default: ''
 
 outputs:
   # Single-shard outputs (when shard-index provided)
@@ -78,6 +82,13 @@ runs:
         SHARD_INDEX="${{ inputs.shard-index }}"
         TOTAL_SHARDS="${{ inputs.shards }}"
 
+        # Build project argument
+        PROJECT_ARG=""
+        if [ -n "${{ inputs.project }}" ]; then
+          PROJECT_ARG="--project \"${{ inputs.project }}\""
+          echo "Using Playwright project: ${{ inputs.project }}"
+        fi
+
         # Try to run orchestrator
         set +e
         RESULT=$(playwright-orchestrator assign \
@@ -86,7 +97,7 @@ runs:
           --level "${{ inputs.level }}" \
           --glob-pattern "${{ inputs.glob-pattern }}" \
           --output-format json \
-          $TIMING_ARG 2>&1)
+          $TIMING_ARG $PROJECT_ARG 2>&1)
         EXIT_CODE=$?
         set -e
 
