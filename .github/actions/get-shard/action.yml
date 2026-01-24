@@ -63,10 +63,15 @@ runs:
           echo "has-files=false" >> $GITHUB_OUTPUT
           echo "file-list=" >> $GITHUB_OUTPUT
         elif [ -n "$PATTERN" ]; then
-          # Use grep pattern for test-level distribution (avoids shell escaping issues)
+          # Use grep-file for test-level distribution (avoids shell escaping issues with |)
           FILE_COUNT=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" | length")
-          echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT tests (using --grep)"
-          echo "test-args=--grep=\"$PATTERN\"" >> $GITHUB_OUTPUT
+          echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT tests (using --grep-file)"
+          
+          # Write pattern to file, converting | to newlines for grep-file format
+          GREP_FILE="playwright-grep-shard-$SHARD_INDEX.txt"
+          echo "$PATTERN" | tr '|' '\n' > "$GREP_FILE"
+          
+          echo "test-args=--grep-file=$GREP_FILE" >> $GITHUB_OUTPUT
           echo "has-files=true" >> $GITHUB_OUTPUT
           echo "file-list=$FILES" >> $GITHUB_OUTPUT
         else
