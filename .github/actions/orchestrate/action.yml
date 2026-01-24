@@ -109,15 +109,24 @@ runs:
         fi
 
         # Try to run orchestrator
+        # Capture stdout (JSON) separately from stderr (warnings)
         set +e
-        RESULT=$(playwright-orchestrator assign "${CMD_ARGS[@]}" 2>&1)
+        STDERR_FILE=$(mktemp)
+        RESULT=$(playwright-orchestrator assign "${CMD_ARGS[@]}" 2>"$STDERR_FILE")
         EXIT_CODE=$?
+        STDERR_OUTPUT=$(cat "$STDERR_FILE")
+        rm -f "$STDERR_FILE"
         set -e
+
+        # Show any warnings from orchestrator
+        if [ -n "$STDERR_OUTPUT" ]; then
+          echo "$STDERR_OUTPUT"
+        fi
 
         # Check if orchestrator failed or returned invalid JSON
         if [ $EXIT_CODE -ne 0 ] || ! echo "$RESULT" | jq -e '.' > /dev/null 2>&1; then
           echo "::warning::Orchestrator failed (exit code $EXIT_CODE), falling back to native sharding"
-          echo "::warning::Error output: $RESULT"
+          echo "::warning::Error output: $RESULT $STDERR_OUTPUT"
           
           # All-shards outputs (for get-shard action)
           echo "use-orchestrator=false" >> $GITHUB_OUTPUT
