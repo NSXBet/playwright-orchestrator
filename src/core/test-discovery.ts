@@ -10,6 +10,17 @@ import type {
 import { buildTestId } from './types.js';
 
 /**
+ * Load tests from a pre-generated Playwright --list JSON file
+ *
+ * @param filePath - Path to JSON file (from `npx playwright test --list --reporter=json`)
+ * @returns List of discovered tests
+ */
+export function loadTestListFromFile(filePath: string): DiscoveredTest[] {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  return parsePlaywrightListOutput(content);
+}
+
+/**
  * Discover tests by running Playwright with --list flag
  *
  * @param testDir - Path to test directory (used for fallback discovery)

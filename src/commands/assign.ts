@@ -16,6 +16,7 @@ import {
   getFileDuration,
   getTestDurations,
   isTimingDataV2,
+  loadTestListFromFile,
   loadTimingData,
   type TestAssignResult,
   type TestWithDuration,
@@ -36,7 +37,11 @@ export default class Assign extends Command {
     'test-dir': Flags.string({
       char: 'd',
       description: 'Path to test directory containing spec files',
-      required: true,
+      required: false, // Not required when using --test-list
+    }),
+    'test-list': Flags.string({
+      description:
+        'Path to JSON file with test list (from playwright --list --reporter=json). When provided, skips test discovery.',
     }),
     'timing-file': Flags.string({
       char: 't',
@@ -95,7 +100,12 @@ export default class Assign extends Command {
   async run(): Promise<void> {
     const { flags } = await this.parse(Assign);
 
-    const testDir = path.resolve(flags['test-dir']);
+    // Validate that either test-dir or test-list is provided
+    if (!flags['test-dir'] && !flags['test-list']) {
+      this.error('Either --test-dir or --test-list must be provided');
+    }
+
+    const testDir = flags['test-dir'] ? path.resolve(flags['test-dir']) : '';
     const pattern = flags['glob-pattern'];
 
     if (flags.level === 'test') {
@@ -104,8 +114,12 @@ export default class Assign extends Command {
         project: flags.project,
         'use-fallback': flags['use-fallback'],
         'config-dir': flags['config-dir'],
+        'test-list': flags['test-list'],
       });
     } else {
+      if (flags['test-list']) {
+        this.error('--test-list is only supported with --level test');
+      }
       await this.runFileLevel(testDir, pattern, flags);
     }
   }
@@ -123,12 +137,20 @@ export default class Assign extends Command {
       project?: string;
       'use-fallback': boolean;
       'config-dir'?: string;
+      'test-list'?: string;
     },
   ): Promise<void> {
-    // Discover tests - prefer Playwright --list for accurate discovery
+    // Discover tests - prefer pre-generated test list, then Playwright --list, then file parsing
     let tests: DiscoveredTest[];
 
-    if (flags['use-fallback']) {
+    if (flags['test-list']) {
+      // Use pre-generated test list file (most reliable in CI)
+      const testListPath = path.resolve(flags['test-list']);
+      tests = loadTestListFromFile(testListPath);
+      if (flags.verbose) {
+        this.log(`Using pre-generated test list from ${testListPath}`);
+      }
+    } else if (flags['use-fallback']) {
       // Explicit fallback requested
       tests = discoverTestsFromFiles(testDir, pattern);
       if (flags.verbose) {
@@ -156,7 +178,8 @@ export default class Assign extends Command {
     }
 
     if (tests.length === 0) {
-      this.warn(`No tests found in ${testDir} matching ${pattern}`);
+      const source = flags['test-list'] || `${testDir} matching ${pattern}`;
+      this.warn(`No tests found in ${source}`);
       this.outputTestResult(
         {
           shards: Object.fromEntries(
