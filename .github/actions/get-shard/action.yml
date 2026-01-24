@@ -18,8 +18,11 @@ inputs:
 
 outputs:
   test-args:
-    description: Arguments for playwright test command (--grep="pattern", files, or --shard=N/M)
+    description: Arguments for playwright test command (files or --shard=N/M for fallback)
     value: ${{ steps.parse.outputs.test-args }}
+  grep-file:
+    description: Path to file containing grep pattern (for test-level distribution)
+    value: ${{ steps.parse.outputs.grep-file }}
   has-files:
     description: Whether this shard has orchestrated files
     value: ${{ steps.parse.outputs.has-files }}
@@ -63,15 +66,16 @@ runs:
           echo "has-files=false" >> $GITHUB_OUTPUT
           echo "file-list=" >> $GITHUB_OUTPUT
         elif [ -n "$PATTERN" ]; then
-          # Use grep-file for test-level distribution (avoids shell escaping issues with |)
+          # Write pattern to file to avoid shell escaping issues with | character
           FILE_COUNT=$(echo "$SHARD_FILES" | jq -r ".\"$SHARD_INDEX\" | length")
-          echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT tests (using --grep-file)"
+          echo "::notice::Shard $SHARD_INDEX has $FILE_COUNT tests"
           
-          # Write pattern to file using absolute path (so it works from any working-directory)
+          # Save pattern to file (use absolute path so it works from any working-directory)
           GREP_FILE="$GITHUB_WORKSPACE/playwright-grep-shard-$SHARD_INDEX.txt"
-          echo "$PATTERN" | tr '|' '\n' > "$GREP_FILE"
+          echo "$PATTERN" > "$GREP_FILE"
+          echo "grep-file=$GREP_FILE" >> $GITHUB_OUTPUT
           
-          echo "test-args=--grep-file=$GREP_FILE" >> $GITHUB_OUTPUT
+          echo "test-args=" >> $GITHUB_OUTPUT
           echo "has-files=true" >> $GITHUB_OUTPUT
           echo "file-list=$FILES" >> $GITHUB_OUTPUT
         else
