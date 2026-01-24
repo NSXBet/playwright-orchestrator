@@ -85,6 +85,11 @@ export default class Assign extends Command {
         'Use file parsing instead of Playwright --list for test discovery',
       default: false,
     }),
+    'config-dir': Flags.string({
+      char: 'c',
+      description:
+        'Directory where playwright.config.ts is located (defaults to test-dir)',
+    }),
   };
 
   async run(): Promise<void> {
@@ -98,6 +103,7 @@ export default class Assign extends Command {
         ...flags,
         project: flags.project,
         'use-fallback': flags['use-fallback'],
+        'config-dir': flags['config-dir'],
       });
     } else {
       await this.runFileLevel(testDir, pattern, flags);
@@ -116,6 +122,7 @@ export default class Assign extends Command {
       'glob-pattern': string;
       project?: string;
       'use-fallback': boolean;
+      'config-dir'?: string;
     },
   ): Promise<void> {
     // Discover tests - prefer Playwright --list for accurate discovery
@@ -130,7 +137,8 @@ export default class Assign extends Command {
     } else {
       try {
         // Try Playwright --list first (handles parameterized tests correctly)
-        tests = discoverTests(testDir, flags.project);
+        // Use config-dir if provided, otherwise use test-dir
+        tests = discoverTests(testDir, flags.project, flags['config-dir']);
         if (flags.verbose) {
           this.log(
             'Using Playwright --list for test discovery (accurate, includes parameterized tests)',
