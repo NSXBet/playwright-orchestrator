@@ -72,19 +72,19 @@ act-test:
 # Note: This runs the full E2E workflow with sharding
 act-e2e:
 	@echo "=== Running E2E example workflow locally with Act ==="
-	act workflow_dispatch -W .github/workflows/e2e-example.yml --rm
+	act workflow_dispatch -W .github/workflows/e2e-example.yml --rm --artifact-server-path /tmp/act-artifacts
 	@echo "=== E2E workflow complete ==="
 
 # Run E2E monorepo workflow locally with Act
 # Tests the monorepo path mismatch scenario
 act-e2e-monorepo:
 	@echo "=== Running E2E monorepo workflow with Act ==="
-	act workflow_dispatch -W .github/workflows/e2e-monorepo.yml --rm
+	act workflow_dispatch -W .github/workflows/e2e-monorepo.yml --rm --artifact-server-path /tmp/act-artifacts
 	@echo "=== E2E monorepo workflow complete ==="
 
 # Run publish test locally with Act
 # Tests that the package can be published and installed correctly
 act-publish:
 	@echo "=== Running publish test with Act ==="
-	act -j test-publish --rm
+	act -j test-publish --rm --artifact-server-path /tmp/act-artifacts
 	@echo "=== Publish test complete ==="
