@@ -3,7 +3,7 @@
 #
 # This workflow uses a three-phase pattern:
 # 1. orchestrate: Run once, compute shard assignments for all shards
-# 2. e2e: Matrix jobs use get-shard action to get their test arguments
+# 2. e2e: Matrix jobs use get-shard action to get their shard file
 # 3. merge-timing: Collect timing data from all shards
 #
 # YOU control: cache keys, artifact paths
@@ -85,7 +85,7 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      # Action handles parsing + fallback
+      # Action outputs shard-file for reporter-based filtering
       - name: Get shard assignment
         uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
         id: shard
@@ -94,9 +94,12 @@ jobs:
           shard-index: ${{ matrix.shard }}
           shards: ${{ env.SHARDS }}
 
-      # Just works - either files or --shard=N/M
+      # Reporter reads ORCHESTRATOR_SHARD_FILE to filter tests
+      # Falls back to native --shard=N/M if orchestration failed
       - name: Run Playwright tests
-        run: npx playwright test ${{ steps.shard.outputs.test-args }}
+        run: npx playwright test ${{ steps.shard.outputs.fallback-args }}
+        env:
+          ORCHESTRATOR_SHARD_FILE: ${{ steps.shard.outputs.shard-file }}
 
       # Extract timing (runs unless cancelled)
       - name: Setup Orchestrator
@@ -110,7 +113,6 @@ jobs:
           report-file: playwright-report/results.json  # Adjust to your report path
           output-file: timing-shard-${{ matrix.shard }}.json
           shard: ${{ matrix.shard }}
-          level: file
 
       # YOU control artifact location
       - name: Upload timing artifact
@@ -167,7 +169,6 @@ jobs:
           existing-file: timing-data.json
           new-files: timing-shard-*.json
           output-file: timing-data.json
-          level: file
 
       # YOU control cache location
       - name: Save timing cache
@@ -184,7 +185,7 @@ jobs:
             jq '{
               version: .version,
               updatedAt: .updatedAt,
-              fileCount: (.files | length)
+              testCount: (.tests | length)
             }' timing-data.json
           else
             echo "No timing data file found"
