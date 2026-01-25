@@ -48,6 +48,50 @@ src/
 - Graceful fallback: Always have a fallback path
 - Test coverage: Add tests for new functionality
 
+## Critical Rules
+
+### Test ID Consistency (CRITICAL)
+
+The orchestrator's correctness depends on ALL components generating **IDENTICAL test IDs** for the same test. Inconsistent IDs will cause tests to silently fail to match between shard assignment and runtime filtering.
+
+**Two contexts for test ID generation:**
+
+1. **Discovery context** (Playwright JSON output):
+   - Use `buildTestId` from `src/core/types.ts`
+   - Data comes pre-processed from Playwright's `--list` JSON
+   - titlePath already excludes project name and filename
+
+2. **Runtime context** (testInfo.titlePath):
+   - Use `buildTestIdFromRuntime` from `src/core/test-id.ts`
+   - Data comes from Playwright's runtime `testInfo.titlePath`
+   - titlePath includes project name, filename, and file paths that must be filtered
+
+**NEVER duplicate the filtering logic. ALWAYS use the shared functions from `src/core/test-id.ts`.**
+
+```typescript
+// CORRECT - Use shared function
+import { buildTestIdFromRuntime } from './core/test-id.js';
+const testId = buildTestIdFromRuntime(file, titlePath, { projectName, baseDir });
+
+// WRONG - Duplicating filtering logic
+const filteredTitles = titlePath.filter((t) => t !== projectName && ...);
+const testId = [file, ...filteredTitles].join('::');
+```
+
+### No Flaky Assumptions
+
+**NEVER make assumptions about user directory structure or naming conventions.**
+
+Bad examples (DO NOT DO):
+- "Strip `apps/` or `packages/` prefix for monorepos"
+- "Assume testDir is always `e2e/`"
+- "File paths starting with `src/` should be normalized"
+
+**All path handling must be deterministic**, based solely on:
+- Playwright's `config.rootDir` or `project.testDir`
+- Actual file paths from `testInfo.file` or JSON output
+- Standard Node.js `path.relative()` behavior
+
 ## Architecture Deep Dive
 
 ### Distribution Algorithm
@@ -122,8 +166,8 @@ reporter: [['@nsxbet/playwright-orchestrator/reporter'], ['html']]
 ```
 
 **Test ID Format**: `{relative-path}::{describe}::{test-title}`
-- Path is relative to CWD with forward slashes
-- Example: `e2e/login.spec.ts::Login::should login`
+- Path is relative to Playwright's `rootDir` (from config), with forward slashes
+- Example: `src/test/e2e/login.spec.ts::Login::should login`
 
 This approach was chosen because:
 - `--grep` has substring collision issues
@@ -131,6 +175,46 @@ This approach was chosen because:
 - CLI arguments have shell escaping problems
 
 See `docs/test-level-reporter.md` for the complete guide.
+
+### Monorepo Path Resolution
+
+In monorepos, the orchestrator and fixture may run from different directories:
+- **Orchestrator**: Runs from repo root (e.g., `bet-app/`)
+- **Fixture**: Runs from app directory (e.g., `apps/bet-client/`)
+
+To ensure consistent test IDs, both use **Playwright's rootDir** from the test-list.json:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Path Resolution                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  test-list.json generated from: apps/bet-client/                │
+│  rootDir in JSON config: /full/path/to/repo/apps/bet-client     │
+│                                                                 │
+│  Orchestrator (CWD: repo root):                                 │
+│  └─ Uses rootDir from JSON → src/test/e2e/login.spec.ts        │
+│                                                                 │
+│  Fixture (CWD: apps/bet-client):                                │
+│  └─ path.relative(CWD, file) → src/test/e2e/login.spec.ts      │
+│                                                                 │
+│  Both produce: src/test/e2e/login.spec.ts::Login::test ✓       │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Important**: Always generate `test-list.json` from the directory where tests run:
+
+```yaml
+# In CI workflow
+- name: Generate test list
+  working-directory: apps/bet-client  # Same as where tests run
+  run: npx playwright test --list --reporter=json > test-list.json
+
+- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
+  with:
+    test-list: apps/bet-client/test-list.json  # Path from repo root
+```
 
 ## Common Tasks
 
@@ -205,8 +289,43 @@ bun test __tests__/foo.ts   # Specific file
 ### Local E2E Testing
 
 ```bash
-make act-test  # Runs CI workflow locally with Act
+make act-test           # Runs CI workflow locally with Act (lint, test, build)
+make act-publish        # Runs publish test locally with Act (Verdaccio)
+make act-e2e            # Runs E2E example workflow with Act
+make act-e2e-monorepo   # Runs E2E monorepo workflow with Act
 ```
+
+### E2E Monorepo Testing
+
+The `e2e-monorepo.yml` workflow tests the orchestrator in a realistic monorepo scenario:
+
+```
+┌─────────┐     ┌─────────────┐     ┌────────────────┐     ┌───────┐
+│  setup  │────▶│ orchestrate │────▶│ e2e-tests (2x) │────▶│ merge │
+└─────────┘     └─────────────┘     └────────────────┘     └───────┘
+```
+
+**Workflow Structure:**
+- **setup**: Builds package, creates tarball artifact
+- **orchestrate**: Uses real `orchestrate` action to assign tests
+- **e2e-tests**: Matrix job using `get-shard` and `extract-timing` actions
+- **merge**: Uses `merge-timing` action to combine timing data
+
+**Note**: Publish validation is handled separately in CI via the `test-publish` job (Verdaccio).
+
+**Test Scenarios in `examples/monorepo/`:**
+- Path normalization (`apps/web/` prefix handling)
+- Parameterized tests (`test.each` patterns)
+- Nested describe blocks (4+ levels deep)
+- Special characters in test names (Unicode, brackets)
+- `::` separator conflicts in test titles
+- Skip patterns (`skip`, `fixme`, `slow`, tags)
+- Deep subdirectory paths (`features/deep/path.spec.ts`)
+
+**Key Files:**
+- `.github/workflows/e2e-monorepo.yml` - Main E2E workflow
+- `examples/monorepo/` - Test monorepo structure mirroring bet-app
+- `verdaccio/config.yaml` - Local registry config for testing
 
 ## Git Workflow
 

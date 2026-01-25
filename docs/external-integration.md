@@ -6,13 +6,13 @@ This guide explains how to integrate the playwright-orchestrator into your own G
 
 The orchestrator provides GitHub Actions that you can reference directly in your workflows:
 
-| Action | Purpose |
-|--------|---------|
-| `setup-orchestrator` | Install and cache the CLI |
-| `orchestrate` | Assign tests to shards (outputs `shard-files` JSON) |
-| `get-shard` | Extract `shard-file` path for reporter-based filtering |
-| `extract-timing` | Extract timing from Playwright reports |
-| `merge-timing` | Merge timing data from multiple shards |
+| Action               | Purpose                                                |
+| -------------------- | ------------------------------------------------------ |
+| `setup-orchestrator` | Install and cache the CLI                              |
+| `orchestrate`        | Assign tests to shards (outputs `shard-files` JSON)    |
+| `get-shard`          | Extract `shard-file` path for reporter-based filtering |
+| `extract-timing`     | Extract timing from Playwright reports                 |
+| `merge-timing`       | Merge timing data from multiple shards                 |
 
 ## Versioning
 
@@ -34,6 +34,7 @@ The recommended pattern uses **three phases** to avoid redundant orchestration:
 ```
 
 **Why three phases?**
+
 - **Efficiency**: Run CKK algorithm once, not N times (one per shard)
 - **Consistency**: All shards get assignments from the same computation
 - **Simplicity**: Actions handle all parsing and fallback logic
@@ -93,7 +94,7 @@ jobs:
         id: orchestrate
         uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         with:
-          test-list: test-list.json  # Use pre-generated list (recommended)
+          test-list: test-list.json # Use pre-generated list (recommended)
           shards: ${{ env.SHARDS }}
           timing-file: timing-data.json
 
@@ -208,14 +209,48 @@ Add the reporter to your `playwright.config.ts`:
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  reporter: [
-    ["@nsxbet/playwright-orchestrator/reporter"],
-    ["html"],
-  ],
+  reporter: [["@nsxbet/playwright-orchestrator/reporter"], ["html"]],
 });
 ```
 
 The reporter is included in the package - no need to copy any files.
+
+## Monorepo Usage
+
+In monorepos where tests live in a subdirectory (e.g., `apps/web/`), ensure the `test-list.json` is generated from the correct working directory:
+
+```yaml
+jobs:
+  orchestrate:
+    steps:
+      # Generate test list FROM the app directory
+      - name: Generate test list
+        working-directory: apps/web  # Where playwright.config.ts lives
+        run: npx playwright test --list --reporter=json > test-list.json
+
+      # Orchestrate can run from repo root
+      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
+        with:
+          test-list: apps/web/test-list.json  # Path from repo root
+          shards: 4
+
+  e2e:
+    steps:
+      # Tests run FROM the app directory
+      - name: Run tests
+        working-directory: apps/web
+        run: npx playwright test
+        env:
+          ORCHESTRATOR_SHARD_FILE: ${{ steps.shard.outputs.shard-file }}
+```
+
+**Why this matters**: The orchestrator generates test IDs relative to Playwright's `rootDir` (from the test-list.json config). The fixture generates IDs relative to `process.cwd()`. When both directories match, the IDs are consistent.
+
+**What happens if misconfigured**:
+- If `test-list.json` is generated from repo root but tests run from `apps/web/`:
+  - Orchestrator: `apps/web/src/e2e/login.spec.ts::...`
+  - Fixture: `src/e2e/login.spec.ts::...`
+  - Result: **All tests skipped** (IDs don't match)
 
 ## Local Development
 
@@ -244,6 +279,7 @@ ORCHESTRATOR_DEBUG=1 ORCHESTRATOR_SHARD_FILE=shard.json npx playwright test
 ```
 
 You should see output like:
+
 ```
 [Orchestrator] 25 tests for this shard
 [Skip] e2e/other.spec.ts::Other::should work
@@ -252,11 +288,13 @@ You should see output like:
 ### Troubleshooting
 
 **Tests not being filtered:**
+
 - Verify `ORCHESTRATOR_SHARD_FILE` points to a valid JSON array of test IDs
 - Check test IDs match format: `{file}::{describe}::{test-title}`
 - Enable debug logging with `ORCHESTRATOR_DEBUG=1`
 
 **All tests skipped:**
+
 - Verify test IDs in shard.json match your actual tests
 - Run `playwright-orchestrator assign` with `--verbose` to see discovered test IDs
 
@@ -269,7 +307,7 @@ Installs and caches the CLI.
 ```yaml
 - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
   with:
-    version: ''  # Optional: specific version (default: latest)
+    version: "" # Optional: specific version (default: latest)
 ```
 
 ### orchestrate
@@ -280,14 +318,15 @@ Assigns tests to shards.
 - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
   id: orchestrate
   with:
-    test-dir: ./e2e           # Required: path to tests
-    shards: 4                 # Required: total shard count
-    timing-file: ''           # Optional: path to timing data
-    level: test               # Optional: 'test' or 'file'
-    project: ''               # Optional: Playwright project name
+    test-dir: ./e2e # Required: path to tests
+    shards: 4 # Required: total shard count
+    timing-file: "" # Optional: path to timing data
+    level: test # Optional: 'test' or 'file'
+    project: "" # Optional: Playwright project name
 ```
 
 **Outputs:**
+
 - `shard-files`: JSON object with test assignments for all shards
 - `expected-durations`: JSON object with expected durations per shard
 - `total-tests`: Total number of tests
@@ -304,10 +343,11 @@ Extracts shard-file path for a specific shard.
   with:
     shard-files: ${{ needs.orchestrate.outputs.shard-files }}
     shard-index: ${{ matrix.shard }}
-    shards: 4                 # For fallback to --shard=N/M
+    shards: 4 # For fallback to --shard=N/M
 ```
 
 **Outputs:**
+
 - `shard-file`: Path to JSON file with test IDs for reporter
 - `has-tests`: Whether this shard has tests
 - `test-count`: Number of tests in this shard
@@ -320,10 +360,10 @@ Extracts timing from Playwright reports.
 ```yaml
 - uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
   with:
-    report-file: ./results.json  # Required: Playwright JSON report
-    output-file: ./timing.json   # Required: output path
-    shard: 1                     # Required: shard index
-    project: default             # Optional: Playwright project
+    report-file: ./results.json # Required: Playwright JSON report
+    output-file: ./timing.json # Required: output path
+    shard: 1 # Required: shard index
+    project: default # Optional: Playwright project
 ```
 
 ### merge-timing
@@ -333,11 +373,11 @@ Merges timing data with EMA smoothing.
 ```yaml
 - uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v0
   with:
-    existing-file: ''            # Optional: existing timing data
-    new-files: 'timing-*.json'   # Required: space-separated paths/globs
-    output-file: ./timing.json   # Required: output path
-    alpha: '0.3'                 # Optional: EMA factor
-    prune-days: '30'             # Optional: remove old entries
+    existing-file: "" # Optional: existing timing data
+    new-files: "timing-*.json" # Required: space-separated paths/globs
+    output-file: ./timing.json # Required: output path
+    alpha: "0.3" # Optional: EMA factor
+    prune-days: "30" # Optional: remove old entries
 ```
 
 ## Fallback Behavior
@@ -360,6 +400,7 @@ This ensures your tests **always run**, even on the first execution or if someth
 - You provide input files, they produce output files
 
 This gives you flexibility to:
+
 - Use custom cache keys
 - Store timing data in S3 or other backends
 - Skip caching entirely for debugging

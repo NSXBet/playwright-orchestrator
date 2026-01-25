@@ -15,10 +15,6 @@ inputs:
     description: Playwright project name
     required: false
     default: 'default'
-  level:
-    description: Extraction level (file or test)
-    required: false
-    default: 'test'
 
 outputs:
   test-count:
@@ -47,8 +43,7 @@ runs:
           --report-file "${{ inputs.report-file }}" \
           --output-file "${{ inputs.output-file }}" \
           --shard "${{ inputs.shard }}" \
-          --project "${{ inputs.project }}" \
-          --level "${{ inputs.level }}"
+          --project "${{ inputs.project }}"
         EXIT_CODE=$?
         set -e
 
@@ -59,13 +54,9 @@ runs:
           exit 0
         fi
 
-        # Count extracted entries
-        if [ "${{ inputs.level }}" = "test" ]; then
-          COUNT=$(jq '.tests | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-        else
-          COUNT=$(jq '.files | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-        fi
+        # Count extracted tests
+        COUNT=$(jq '.tests | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
 
         echo "test-count=$COUNT" >> $GITHUB_OUTPUT
         echo "success=true" >> $GITHUB_OUTPUT
-        echo "Extracted timing for $COUNT entries from shard ${{ inputs.shard }}"
+        echo "Extracted timing for $COUNT tests from shard ${{ inputs.shard }}"

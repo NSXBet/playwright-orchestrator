@@ -39,3 +39,14 @@ shard-timing-*.json
 *.log
 npm-debug.log*
 .npmrc.verdaccio
+
+# Verdaccio (local testing)
+verdaccio/storage/
+verdaccio/htpasswd
+
+# Generated test files
+examples/monorepo/apps/web/test-list.json
+examples/monorepo/apps/web/node_modules/
+examples/monorepo/node_modules/
+examples/monorepo/apps/web/package-lock.json
+examples/monorepo/package-lock.json

@@ -20,10 +20,6 @@ inputs:
     description: Remove entries older than N days
     required: false
     default: '30'
-  level:
-    description: Data level (file or test)
-    required: false
-    default: 'test'
 
 outputs:
   test-count:
@@ -78,7 +74,6 @@ runs:
           --output "${{ inputs.output-file }}" \
           --alpha "${{ inputs.alpha }}" \
           --prune-days "${{ inputs.prune-days }}" \
-          --level "${{ inputs.level }}" \
           $EXISTING_ARG
         EXIT_CODE=$?
         set -e
@@ -90,13 +85,9 @@ runs:
           exit 0
         fi
 
-        # Get count from output
-        if [ "${{ inputs.level }}" = "test" ]; then
-          COUNT=$(jq '.tests | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-        else
-          COUNT=$(jq '.files | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-        fi
+        # Count tests in merged data
+        COUNT=$(jq '.tests | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
 
         echo "test-count=$COUNT" >> $GITHUB_OUTPUT
         echo "success=true" >> $GITHUB_OUTPUT
-        echo "Merged timing data has $COUNT entries"
+        echo "Merged timing data has $COUNT tests"

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
+import {
+  buildTestIdFromRuntime,
+  filterRuntimeTitlePath,
+} from '../src/core/test-id.js';
 import { buildTestId, parseTestId } from '../src/core/types.js';
 
 /**
@@ -315,5 +319,252 @@ describe('Real-world scenarios', () => {
     const id2 = buildTestId('e2e/test.spec.ts', ['Browser: Firefox', 'works']);
 
     expect(id1).not.toBe(id2);
+  });
+});
+
+/**
+ * Runtime filtering tests for fixture and reporter context.
+ * These test the shared functions that fixture.ts and reporter.ts use.
+ */
+describe('Runtime Title Path Filtering', () => {
+  describe('filterRuntimeTitlePath', () => {
+    test('filters empty strings', () => {
+      const result = filterRuntimeTitlePath(['', 'Login', '', 'should work']);
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('filters project name', () => {
+      const result = filterRuntimeTitlePath(
+        ['chromium', 'Login', 'should work'],
+        { projectName: 'chromium' },
+      );
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('filters file name', () => {
+      const result = filterRuntimeTitlePath(
+        ['login.spec.ts', 'Login', 'should work'],
+        { fileName: 'login.spec.ts' },
+      );
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('filters both project name and file name', () => {
+      const result = filterRuntimeTitlePath(
+        ['chromium', 'login.spec.ts', 'Login', 'should work'],
+        { projectName: 'chromium', fileName: 'login.spec.ts' },
+      );
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('filters file paths with forward slashes', () => {
+      const result = filterRuntimeTitlePath([
+        'e2e/login.spec.ts',
+        'Login',
+        'should work',
+      ]);
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('filters file paths with backslashes', () => {
+      const result = filterRuntimeTitlePath([
+        'e2e\\login.spec.ts',
+        'Login',
+        'should work',
+      ]);
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('filters .spec.ts file extensions', () => {
+      const result = filterRuntimeTitlePath([
+        'login.spec.ts',
+        'Login',
+        'should work',
+      ]);
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('filters .test.ts file extensions', () => {
+      const result = filterRuntimeTitlePath([
+        'login.test.ts',
+        'Login',
+        'should work',
+      ]);
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('filters .spec.js file extensions', () => {
+      const result = filterRuntimeTitlePath([
+        'login.spec.js',
+        'Login',
+        'should work',
+      ]);
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('filters .test.js file extensions', () => {
+      const result = filterRuntimeTitlePath([
+        'login.test.js',
+        'Login',
+        'should work',
+      ]);
+      expect(result).toEqual(['Login', 'should work']);
+    });
+
+    test('preserves nested describe blocks', () => {
+      const result = filterRuntimeTitlePath(
+        ['chromium', 'login.spec.ts', 'Auth', 'Login', 'should authenticate'],
+        { projectName: 'chromium', fileName: 'login.spec.ts' },
+      );
+      expect(result).toEqual(['Auth', 'Login', 'should authenticate']);
+    });
+
+    test('handles complex Playwright runtime titlePath', () => {
+      // Simulates what testInfo.titlePath looks like in Playwright runtime
+      const result = filterRuntimeTitlePath(
+        [
+          'Desktop Chrome',
+          '/project/src/test/e2e/login.spec.ts',
+          'login.spec.ts',
+          'Authentication',
+          'Login Form',
+          'should submit credentials',
+        ],
+        { projectName: 'Desktop Chrome', fileName: 'login.spec.ts' },
+      );
+      expect(result).toEqual([
+        'Authentication',
+        'Login Form',
+        'should submit credentials',
+      ]);
+    });
+  });
+
+  describe('buildTestIdFromRuntime', () => {
+    test('builds ID with all filtering applied', () => {
+      const result = buildTestIdFromRuntime(
+        '/project/e2e/login.spec.ts',
+        ['chromium', 'login.spec.ts', 'Login', 'should work'],
+        { projectName: 'chromium', baseDir: '/project' },
+      );
+      expect(result).toBe('e2e/login.spec.ts::Login::should work');
+    });
+
+    test('handles Windows paths', () => {
+      // path.relative behavior differs on Windows, but we normalize to forward slashes
+      const result = buildTestIdFromRuntime(
+        '/project/e2e/auth/login.spec.ts',
+        ['Login', 'should work'],
+        { baseDir: '/project' },
+      );
+      expect(result).toBe('e2e/auth/login.spec.ts::Login::should work');
+    });
+
+    test('uses cwd when baseDir not provided', () => {
+      // This test verifies the default behavior
+      const cwd = process.cwd();
+      const testFile = path.join(cwd, 'e2e/login.spec.ts');
+      const result = buildTestIdFromRuntime(testFile, ['Login', 'should work']);
+      expect(result).toBe('e2e/login.spec.ts::Login::should work');
+    });
+
+    test('handles deeply nested paths', () => {
+      const result = buildTestIdFromRuntime(
+        '/workspace/apps/web/src/test/e2e/features/auth/login.spec.ts',
+        [
+          'Desktop Chrome',
+          '/workspace/apps/web/src/test/e2e/features/auth/login.spec.ts',
+          'login.spec.ts',
+          'Authentication',
+          'should login',
+        ],
+        { projectName: 'Desktop Chrome', baseDir: '/workspace/apps/web' },
+      );
+      expect(result).toBe(
+        'src/test/e2e/features/auth/login.spec.ts::Authentication::should login',
+      );
+    });
+  });
+});
+
+/**
+ * Cross-component consistency tests.
+ * Verifies that fixture and reporter will produce identical IDs.
+ */
+describe('Fixture-Reporter Consistency', () => {
+  test('same test produces same ID in both contexts', () => {
+    // Simulate what fixture and reporter both receive from Playwright
+    const absoluteFile = '/project/e2e/login.spec.ts';
+    const runtimeTitlePath = [
+      'chromium',
+      '/project/e2e/login.spec.ts',
+      'login.spec.ts',
+      'Login',
+      'should authenticate',
+    ];
+    const projectName = 'chromium';
+    const baseDir = '/project';
+
+    // What fixture produces
+    const fixtureId = buildTestIdFromRuntime(absoluteFile, runtimeTitlePath, {
+      projectName,
+      baseDir,
+    });
+
+    // What reporter produces (same function!)
+    const reporterId = buildTestIdFromRuntime(absoluteFile, runtimeTitlePath, {
+      projectName,
+      baseDir,
+    });
+
+    expect(fixtureId).toBe(reporterId);
+    expect(fixtureId).toBe('e2e/login.spec.ts::Login::should authenticate');
+  });
+
+  test('monorepo test produces consistent IDs', () => {
+    const absoluteFile =
+      '/workspace/apps/web/src/test/e2e/features/checkout.spec.ts';
+    const runtimeTitlePath = [
+      'Mobile Safari',
+      '/workspace/apps/web/src/test/e2e/features/checkout.spec.ts',
+      'checkout.spec.ts',
+      'Checkout',
+      'Payment',
+      'should process credit card',
+    ];
+
+    const id = buildTestIdFromRuntime(absoluteFile, runtimeTitlePath, {
+      projectName: 'Mobile Safari',
+      baseDir: '/workspace/apps/web',
+    });
+
+    expect(id).toBe(
+      'src/test/e2e/features/checkout.spec.ts::Checkout::Payment::should process credit card',
+    );
+  });
+
+  test('discovery ID matches runtime ID after filtering', () => {
+    // What discovery produces (from Playwright JSON, already filtered)
+    const discoveryId = buildTestId('e2e/login.spec.ts', [
+      'Login',
+      'should authenticate',
+    ]);
+
+    // What runtime produces (needs filtering)
+    const runtimeId = buildTestIdFromRuntime(
+      '/project/e2e/login.spec.ts',
+      [
+        'chromium',
+        '/project/e2e/login.spec.ts',
+        'login.spec.ts',
+        'Login',
+        'should authenticate',
+      ],
+      { projectName: 'chromium', baseDir: '/project' },
+    );
+
+    // Both should produce identical IDs
+    expect(discoveryId).toBe(runtimeId);
+    expect(discoveryId).toBe('e2e/login.spec.ts::Login::should authenticate');
   });
 });

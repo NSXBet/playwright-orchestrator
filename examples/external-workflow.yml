@@ -65,7 +65,7 @@ jobs:
         id: orchestrate
         uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         with:
-          test-list: test-list.json  # Use pre-generated list (recommended)
+          test-list: test-list.json # Use pre-generated list (recommended)
           shards: ${{ env.SHARDS }}
           timing-file: timing-data.json
 
@@ -123,7 +123,7 @@ jobs:
         if: success() || failure()
         uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
         with:
-          report-file: playwright-report/results.json  # Adjust to your report path
+          report-file: playwright-report/results.json # Adjust to your report path
           output-file: timing-shard-${{ matrix.shard }}.json
           shard: ${{ matrix.shard }}
 

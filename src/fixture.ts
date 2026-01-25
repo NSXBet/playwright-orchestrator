@@ -20,8 +20,13 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { TestType } from '@playwright/test';
+import { buildTestIdFromRuntime } from './core/test-id.js';
+
+// Module initialization debug - only in debug mode
+if (process.env.ORCHESTRATOR_DEBUG === '1') {
+  process.stderr.write('[Fixture Module] Loading orchestrator fixture\n');
+}
 
 // Cache the shard file to avoid re-reading on every test
 let cachedAllowedTestIds: Set<string> | null = null;
@@ -41,35 +46,33 @@ function loadShardFile(): Set<string> | null {
   }
 
   try {
-    const testIds = JSON.parse(fs.readFileSync(shardFile, 'utf-8'));
+    const parsed = JSON.parse(fs.readFileSync(shardFile, 'utf-8'));
+
+    // Validate shard file format
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every((id) => typeof id === 'string')
+    ) {
+      throw new Error(
+        '[Orchestrator] Shard file must be a JSON array of strings',
+      );
+    }
+
+    const testIds: string[] = parsed;
     cachedAllowedTestIds = new Set(testIds);
-    console.log(
-      `[Orchestrator] Loaded ${cachedAllowedTestIds.size} tests for this shard`,
-    );
+    if (process.env.ORCHESTRATOR_DEBUG === '1') {
+      process.stderr.write(
+        `[Orchestrator] Loaded ${testIds.length} tests for this shard\n`,
+      );
+      process.stderr.write(
+        `[Orchestrator] Sample IDs: ${testIds.slice(0, 3).join(' | ')}\n`,
+      );
+    }
     return cachedAllowedTestIds;
   } catch (error) {
     console.error('[Orchestrator] Failed to load shard file:', error);
     throw error;
   }
-}
-
-function buildTestId(
-  filePath: string,
-  titlePath: string[],
-  projectName?: string,
-): string {
-  const file = path.relative(process.cwd(), filePath).replace(/\\/g, '/');
-  const fileName = path.basename(filePath);
-
-  // Filter titlePath to exclude project name, filename, and empty strings
-  const filteredTitles = titlePath.filter((title) => {
-    if (!title || title === '') return false;
-    if (title === projectName) return false;
-    if (title === fileName) return false;
-    return true;
-  });
-
-  return [file, ...filteredTitles].join('::');
 }
 
 /**
@@ -86,16 +89,22 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
     const allowedTestIds = loadShardFile();
 
     if (allowedTestIds) {
-      const testId = buildTestId(
-        testInfo.file,
-        testInfo.titlePath,
-        testInfo.project.name,
-      );
+      // Use project.testDir for consistent path resolution with test-discovery
+      const testId = buildTestIdFromRuntime(testInfo.file, testInfo.titlePath, {
+        projectName: testInfo.project.name,
+        baseDir: testInfo.project.testDir,
+      });
 
-      if (!allowedTestIds.has(testId)) {
-        if (process.env.ORCHESTRATOR_DEBUG === '1') {
-          console.log(`[Orchestrator Skip] ${testId}`);
-        }
+      const isAllowed = allowedTestIds.has(testId);
+
+      // Debug: Write to stderr for visibility in CI logs
+      if (process.env.ORCHESTRATOR_DEBUG === '1') {
+        process.stderr.write(
+          `[Fixture] testDir=${testInfo.project.testDir} | testId=${testId} | allowed=${isAllowed}\n`,
+        );
+      }
+
+      if (!isAllowed) {
         test.skip(true, 'Not in shard');
       }
     }
@@ -112,16 +121,15 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
 export function shouldRunTest(testInfo: {
   file: string;
   titlePath: string[];
-  project: { name: string };
+  project: { name: string; testDir?: string };
 }): boolean {
   const allowedTestIds = loadShardFile();
   if (!allowedTestIds) return true;
 
-  const testId = buildTestId(
-    testInfo.file,
-    testInfo.titlePath,
-    testInfo.project.name,
-  );
+  const testId = buildTestIdFromRuntime(testInfo.file, testInfo.titlePath, {
+    projectName: testInfo.project.name,
+    baseDir: testInfo.project.testDir,
+  });
 
   return allowedTestIds.has(testId);
 }

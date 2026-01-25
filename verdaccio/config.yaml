@@ -1,0 +1,47 @@
+# Verdaccio config for CI testing - allows anonymous publish
+storage: ./storage
+
+# Bind to localhost only for security (CI-only usage)
+listen:
+  - localhost:4873
+
+# Disable authentication completely for CI
+auth:
+  htpasswd:
+    file: ./htpasswd
+    max_users: -1
+
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+
+packages:
+  '@nsxbet/*':
+    # Allow everyone to access and publish
+    access: $all
+    publish: $all
+    unpublish: $all
+
+  '@*/*':
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+
+  '**':
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+
+server:
+  keepAliveTimeout: 60
+
+middlewares:
+  audit:
+    enabled: true
+
+log: { type: stdout, format: pretty, level: warn }
+
+# Security settings for CI
+security:
+  api:
+    legacy: true
