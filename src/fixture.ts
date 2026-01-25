@@ -113,10 +113,15 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
         testInfo.project.testDir,
       );
 
+      // Debug: Always log test ID matching for first few tests to help diagnose issues
+      if (process.env.ORCHESTRATOR_DEBUG === '1') {
+        const isAllowed = allowedTestIds.has(testId);
+        console.log(
+          `[Orchestrator] testDir=${testInfo.project.testDir}, file=${testInfo.file}, testId=${testId}, allowed=${isAllowed}`,
+        );
+      }
+
       if (!allowedTestIds.has(testId)) {
-        if (process.env.ORCHESTRATOR_DEBUG === '1') {
-          console.log(`[Orchestrator Skip] ${testId}`);
-        }
         test.skip(true, 'Not in shard');
       }
     }
