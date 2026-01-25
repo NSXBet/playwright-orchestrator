@@ -72,9 +72,12 @@ export function parsePlaywrightListOutput(
 
   try {
     const data = JSON.parse(jsonOutput) as PlaywrightListOutput;
+    const rootDir = data.config?.rootDir || process.cwd();
 
     for (const suite of data.suites) {
-      extractTestsFromSuite(suite, [], tests);
+      // Root suites represent files - their title is the filename
+      // We skip this title from titlePath since it's redundant with file
+      extractTestsFromSuite(suite, [], tests, rootDir, true);
     }
   } catch {
     // Try parsing line by line if JSON is malformed (older Playwright versions)
@@ -82,8 +85,10 @@ export function parsePlaywrightListOutput(
     const jsonMatch = jsonOutput.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const data = JSON.parse(jsonMatch[0]) as PlaywrightListOutput;
+      const rootDir = data.config?.rootDir || process.cwd();
+
       for (const suite of data.suites) {
-        extractTestsFromSuite(suite, [], tests);
+        extractTestsFromSuite(suite, [], tests, rootDir, true);
       }
     }
   }
@@ -93,14 +98,24 @@ export function parsePlaywrightListOutput(
 
 /**
  * Recursively extract tests from a Playwright suite
+ *
+ * @param suite - Playwright suite from JSON output
+ * @param parentTitles - Title path from parent suites (describe blocks)
+ * @param tests - Array to collect discovered tests
+ * @param rootDir - Test root directory from Playwright config
+ * @param isRootSuite - Whether this is a root file suite (title is filename, should be skipped)
  */
 function extractTestsFromSuite(
   suite: PlaywrightListSuite,
   parentTitles: string[],
   tests: DiscoveredTest[],
+  rootDir: string,
+  isRootSuite = false,
 ): void {
+  // Root suites have the filename as title - skip it from titlePath
+  // Nested suites (describe blocks) have meaningful titles to include
   const currentTitles =
-    suite.title && suite.title !== ''
+    !isRootSuite && suite.title && suite.title !== ''
       ? [...parentTitles, suite.title]
       : parentTitles;
 
@@ -108,7 +123,7 @@ function extractTestsFromSuite(
   if (suite.specs) {
     for (const spec of suite.specs) {
       const titlePath = [...currentTitles, spec.title];
-      const file = getRelativeFilePath(spec.file || suite.file);
+      const file = resolveFilePath(spec.file || suite.file, rootDir);
 
       tests.push({
         file,
@@ -121,20 +136,32 @@ function extractTestsFromSuite(
     }
   }
 
-  // Process nested suites
+  // Process nested suites (describe blocks)
   if (suite.suites) {
     for (const nestedSuite of suite.suites) {
-      extractTestsFromSuite(nestedSuite, currentTitles, tests);
+      extractTestsFromSuite(nestedSuite, currentTitles, tests, rootDir, false);
     }
   }
 }
 
 /**
- * Get relative file path from absolute path
- * Uses path relative to CWD for consistency with reporter
+ * Resolve file path to be relative to CWD
+ *
+ * Playwright JSON output may contain:
+ * - Just filename (relative to rootDir): "account.spec.ts"
+ * - Full absolute path: "/Users/.../src/test/e2e/account.spec.ts"
+ *
+ * We need to return path relative to CWD for consistency with reporter.
  */
-function getRelativeFilePath(filePath: string): string {
-  return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
+function resolveFilePath(filePath: string, rootDir: string): string {
+  // If it's already an absolute path, make it relative to CWD
+  if (path.isAbsolute(filePath)) {
+    return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
+  }
+
+  // If it's just a filename, resolve it from rootDir then make relative to CWD
+  const absolutePath = path.resolve(rootDir, filePath);
+  return path.relative(process.cwd(), absolutePath).replace(/\\/g, '/');
 }
 
 /**

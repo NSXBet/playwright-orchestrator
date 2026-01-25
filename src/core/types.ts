@@ -167,6 +167,7 @@ export interface PlaywrightTestResult {
  */
 export interface PlaywrightListOutput {
   config: {
+    rootDir?: string;
     projects: Array<{
       name: string;
       testDir: string;
