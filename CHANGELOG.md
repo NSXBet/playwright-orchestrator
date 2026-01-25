@@ -1,5 +1,23 @@
 # @nsxbet/playwright-orchestrator
 
+## 0.6.1
+
+### Patch Changes
+
+- [`b5f5621`](https://github.com/NSXBet/playwright-orchestrator/commit/b5f5621fbe9e50bf125121da8ecc79cb9a0caa4f) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Add typesVersions for TypeScript moduleResolution compatibility
+
+  Projects using `moduleResolution: "node"` in their tsconfig.json couldn't resolve
+  types for subpath imports like `@nsxbet/playwright-orchestrator/fixture`.
+
+  Added `typesVersions` field to package.json as a fallback for older TypeScript
+  configurations that don't support the `exports` field for type resolution.
+
+  This fixes the error:
+
+  ```
+  Cannot find module '@nsxbet/playwright-orchestrator/fixture' or its corresponding type declarations.
+  ```
+
 ## 0.6.0
 
 ### Minor Changes
