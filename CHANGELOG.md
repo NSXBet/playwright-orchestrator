@@ -1,5 +1,26 @@
 # @nsxbet/playwright-orchestrator
 
+## 0.5.2
+
+### Patch Changes
+
+- [#22](https://github.com/NSXBet/playwright-orchestrator/pull/22) [`8c1f0c1`](https://github.com/NSXBet/playwright-orchestrator/commit/8c1f0c177627a350e3e75974231fb5d2b4fd85bb) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Fix test ID path resolution to match reporter format
+
+  The orchestrator was generating test IDs with incorrect file paths and duplicated filenames:
+
+  - File paths were just filenames instead of relative paths from CWD
+  - Root suite title (filename) was included in titlePath, causing duplication
+
+  Fixed by:
+
+  - Using `config.rootDir` from Playwright JSON to resolve relative file paths
+  - Skipping root suite title from titlePath (it's the filename, redundant with file)
+
+  Before: `account.spec.ts::account.spec.ts::Describe::test`
+  After: `src/test/e2e/account.spec.ts::Describe::test`
+
+  This ensures test IDs match between orchestrator (discovery) and reporter (runtime filtering).
+
 ## 0.5.1
 
 ### Patch Changes
