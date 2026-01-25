@@ -33,6 +33,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Setup Orchestrator
         uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
 
@@ -46,15 +55,19 @@ jobs:
             playwright-timing-main
             playwright-timing-
 
+      # IMPORTANT: Use Playwright to list tests for accurate discovery
+      # This ensures parameterized tests (test.each) are correctly identified
+      - name: Generate test list
+        run: npx playwright test --list --reporter=json > test-list.json
+
       # Action handles all orchestration logic
       - name: Orchestrate tests
         id: orchestrate
         uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         with:
-          test-dir: ./e2e  # Adjust to your test directory
+          test-list: test-list.json  # Use pre-generated list (recommended)
           shards: ${{ env.SHARDS }}
           timing-file: timing-data.json
-          # No shard-index = outputs ALL shards
 
   # ============================================
   # Phase 2: Run tests (parallel matrix)

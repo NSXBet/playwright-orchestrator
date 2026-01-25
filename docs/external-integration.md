@@ -40,6 +40,8 @@ The recommended pattern uses **three phases** to avoid redundant orchestration:
 
 ## Complete Workflow with Reporter-Based Filtering
 
+**Important**: Use `npx playwright test --list --reporter=json` to generate the test list. This ensures accurate discovery of parameterized tests (`test.each`) and avoids mismatches between discovered and actual tests.
+
 ```yaml
 name: E2E Tests
 
@@ -62,6 +64,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
       - name: Setup Orchestrator
         uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
 
@@ -75,15 +84,18 @@ jobs:
             playwright-timing-main
             playwright-timing-
 
+      # IMPORTANT: Use Playwright to list tests for accurate discovery
+      - name: Generate test list
+        run: npx playwright test --list --reporter=json > test-list.json
+
       # Action handles all orchestration logic
       - name: Orchestrate tests
         id: orchestrate
         uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         with:
-          test-dir: ./e2e
+          test-list: test-list.json  # Use pre-generated list (recommended)
           shards: ${{ env.SHARDS }}
           timing-file: timing-data.json
-          level: test
 
   # ============================================
   # Phase 2: Run tests (parallel matrix)

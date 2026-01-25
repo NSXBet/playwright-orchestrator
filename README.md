@@ -106,7 +106,9 @@ This is useful for debugging why a specific test runs (or doesn't run) in a part
 
 ## GitHub Actions (External Repositories)
 
-Use the orchestrator in your own repository. The recommended pattern runs orchestration **once** before matrix jobs:
+Use the orchestrator in your own repository. The recommended pattern runs orchestration **once** before matrix jobs.
+
+**Important**: Use `npx playwright test --list --reporter=json` to generate the test list. This ensures accurate discovery of parameterized tests (`test.each`) and avoids mismatches between discovered and actual tests.
 
 ```yaml
 jobs:
@@ -117,6 +119,14 @@ jobs:
       shard-files: ${{ steps.orchestrate.outputs.shard-files }}
     steps:
       - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      
+      - run: npm ci
+
       - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
 
       # YOU control cache location
@@ -126,11 +136,14 @@ jobs:
           key: playwright-timing-${{ github.ref_name }}
           restore-keys: playwright-timing-
 
+      # IMPORTANT: Generate test list with Playwright for accurate discovery
+      - run: npx playwright test --list --reporter=json > test-list.json
+
       # Action handles all orchestration logic
       - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         id: orchestrate
         with:
-          test-dir: ./e2e
+          test-list: test-list.json  # Use pre-generated list (recommended)
           shards: 4
           timing-file: timing-data.json
 
