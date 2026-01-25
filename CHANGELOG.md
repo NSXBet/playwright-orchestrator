@@ -1,5 +1,18 @@
 # @nsxbet/playwright-orchestrator
 
+## 0.5.3
+
+### Patch Changes
+
+- [#24](https://github.com/NSXBet/playwright-orchestrator/pull/24) [`5f59ef5`](https://github.com/NSXBet/playwright-orchestrator/commit/5f59ef587d119aa63d9e39cc340005ff9e5c0d53) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Fix reporter test ID matching to exclude project name and filename from titlePath
+
+  The reporter's `buildTestId` was incorrectly including the project name and filename from `titlePath()`, causing test IDs to mismatch between orchestrator and reporter.
+
+  Before: `src/test/e2e/account.spec.ts::Mobile Chrome::account.spec.ts::Describe::test`
+  After: `src/test/e2e/account.spec.ts::Describe::test`
+
+  This ensures tests are correctly filtered during shard execution.
+
 ## 0.5.2
 
 ### Patch Changes
