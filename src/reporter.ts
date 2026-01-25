@@ -57,6 +57,7 @@ export default class OrchestratorReporter implements Reporter {
   private allowedTestIds: Set<string> | null = null;
   private debug = process.env.ORCHESTRATOR_DEBUG === '1';
   private startTime = 0;
+  private rootDir = '';
 
   // Counters for summary
   private passed = 0;
@@ -66,6 +67,7 @@ export default class OrchestratorReporter implements Reporter {
 
   onBegin(config: FullConfig, suite: Suite) {
     this.startTime = Date.now();
+    this.rootDir = config.rootDir;
     const shardFile = process.env.ORCHESTRATOR_SHARD_FILE;
 
     if (!shardFile || !fs.existsSync(shardFile)) {
@@ -251,9 +253,9 @@ export default class OrchestratorReporter implements Reporter {
    * Format: {relative-file}::{describe}::{test-title}
    */
   private buildTestId(test: TestCase): string {
-    const file = path
-      .relative(process.cwd(), test.location.file)
-      .replace(/\\/g, '/');
+    // Use rootDir from config for consistent path resolution with test-discovery
+    const baseDir = this.rootDir || process.cwd();
+    const file = path.relative(baseDir, test.location.file).replace(/\\/g, '/');
     const filteredTitles = this.getFilteredTitles(test);
     return [file, ...filteredTitles].join('::');
   }

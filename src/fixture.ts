@@ -67,8 +67,11 @@ function buildTestId(
   filePath: string,
   titlePath: string[],
   projectName?: string,
+  rootDir?: string,
 ): string {
-  const file = path.relative(process.cwd(), filePath).replace(/\\/g, '/');
+  // Use rootDir from config if available, otherwise fall back to cwd
+  const baseDir = rootDir || process.cwd();
+  const file = path.relative(baseDir, filePath).replace(/\\/g, '/');
   const fileName = path.basename(filePath);
 
   // Filter titlePath to exclude project name, filename, empty strings, and file paths
@@ -101,10 +104,12 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
     const allowedTestIds = loadShardFile();
 
     if (allowedTestIds) {
+      // Use config.rootDir for consistent path resolution with test-discovery
       const testId = buildTestId(
         testInfo.file,
         testInfo.titlePath,
         testInfo.project.name,
+        testInfo.config.rootDir,
       );
 
       if (!allowedTestIds.has(testId)) {
@@ -128,6 +133,7 @@ export function shouldRunTest(testInfo: {
   file: string;
   titlePath: string[];
   project: { name: string };
+  config?: { rootDir?: string };
 }): boolean {
   const allowedTestIds = loadShardFile();
   if (!allowedTestIds) return true;
@@ -136,6 +142,7 @@ export function shouldRunTest(testInfo: {
     testInfo.file,
     testInfo.titlePath,
     testInfo.project.name,
+    testInfo.config?.rootDir,
   );
 
   return allowedTestIds.has(testId);
