@@ -23,6 +23,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TestType } from '@playwright/test';
 
+// Module initialization debug - this runs when the module is first imported
+process.stderr.write(
+  '[Fixture Module] Loading @nsxbet/playwright-orchestrator/fixture\n',
+);
+
 // Cache the shard file to avoid re-reading on every test
 let cachedAllowedTestIds: Set<string> | null = null;
 let cacheInitialized = false;
