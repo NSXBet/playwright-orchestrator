@@ -131,10 +131,10 @@ function extractTestsFromSuite(
 
 /**
  * Get relative file path from absolute path
+ * Uses path relative to CWD for consistency with reporter
  */
 function getRelativeFilePath(filePath: string): string {
-  // Extract just the filename for test IDs
-  return path.basename(filePath);
+  return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
 }
 
 /**
@@ -157,8 +157,11 @@ export function discoverTestsFromFiles(
 
   for (const filePath of files) {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const fileName = path.basename(filePath);
-    const fileTests = parseTestsFromSource(content, fileName);
+    // Use relative path from CWD for consistency with reporter
+    const relativeFile = path
+      .relative(process.cwd(), filePath)
+      .replace(/\\/g, '/');
+    const fileTests = parseTestsFromSource(content, relativeFile);
     tests.push(...fileTests);
   }
 

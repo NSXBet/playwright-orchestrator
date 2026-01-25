@@ -13,10 +13,6 @@ inputs:
   shards:
     description: Total number of shards
     required: true
-  shard-index:
-    description: Current shard index (1-based). Omit to output ALL shards.
-    required: false
-    default: ''
   timing-file:
     description: Path to timing data JSON file (optional)
     required: false
@@ -39,38 +35,18 @@ inputs:
     default: ''
 
 outputs:
-  # Single-shard outputs (when shard-index provided)
-  grep-pattern:
-    description: Grep pattern for this shard's tests
-    value: ${{ steps.assign.outputs.grep-pattern }}
-  test-count:
-    description: Number of tests assigned to this shard
-    value: ${{ steps.assign.outputs.test-count }}
-  expected-duration:
-    description: Expected duration in milliseconds
-    value: ${{ steps.assign.outputs.expected-duration }}
-  is-optimal:
-    description: Whether the distribution is optimal
-    value: ${{ steps.assign.outputs.is-optimal }}
-  use-native-sharding:
-    description: Whether to fallback to native Playwright sharding
-    value: ${{ steps.assign.outputs.use-native-sharding }}
-  shard-arg:
-    description: Native shard argument (e.g., --shard=1/4)
-    value: ${{ steps.assign.outputs.shard-arg }}
-  # All-shards outputs (when shard-index omitted)
   shard-files:
-    description: JSON object with file assignments for all shards
+    description: JSON object with test/file assignments for all shards
     value: ${{ steps.assign.outputs.shard-files }}
-  grep-patterns:
-    description: JSON object with grep patterns for all shards (test-level only)
-    value: ${{ steps.assign.outputs.grep-patterns }}
-  test-locations:
-    description: JSON object with test locations (file:line format) for all shards - recommended for exact test filtering
-    value: ${{ steps.assign.outputs.test-locations }}
   expected-durations:
     description: JSON object with expected durations for all shards
     value: ${{ steps.assign.outputs.expected-durations }}
+  total-tests:
+    description: Total number of tests/files
+    value: ${{ steps.assign.outputs.total-tests }}
+  is-optimal:
+    description: Whether the distribution is optimal
+    value: ${{ steps.assign.outputs.is-optimal }}
   use-orchestrator:
     description: Whether orchestration succeeded (use with get-shard action)
     value: ${{ steps.assign.outputs.use-orchestrator }}
@@ -82,13 +58,12 @@ runs:
       id: assign
       shell: bash
       run: |
-        SHARD_INDEX="${{ inputs.shard-index }}"
         TOTAL_SHARDS="${{ inputs.shards }}"
         TEST_LIST="${{ inputs.test-list }}"
         PROJECT="${{ inputs.project }}"
         CONFIG_DIR="${{ inputs.config-dir }}"
 
-        # Build command arguments as array to handle spaces correctly
+        # Build command arguments
         CMD_ARGS=(
           --shards "$TOTAL_SHARDS"
           --level "${{ inputs.level }}"
@@ -130,7 +105,6 @@ runs:
         fi
 
         # Try to run orchestrator
-        # Capture stdout (JSON) separately from stderr (warnings)
         set +e
         STDERR_FILE=$(mktemp)
         RESULT=$(playwright-orchestrator assign "${CMD_ARGS[@]}" 2>"$STDERR_FILE")
@@ -149,65 +123,34 @@ runs:
           echo "::warning::Orchestrator failed (exit code $EXIT_CODE), falling back to native sharding"
           echo "::warning::Error output: $RESULT $STDERR_OUTPUT"
           
-          # All-shards outputs (for get-shard action)
           echo "use-orchestrator=false" >> $GITHUB_OUTPUT
           echo "shard-files={}" >> $GITHUB_OUTPUT
-          echo "grep-patterns={}" >> $GITHUB_OUTPUT
-          echo "test-locations={}" >> $GITHUB_OUTPUT
           echo "expected-durations={}" >> $GITHUB_OUTPUT
-          
-          # Single-shard outputs (legacy)
-          if [ -n "$SHARD_INDEX" ]; then
-            echo "use-native-sharding=true" >> $GITHUB_OUTPUT
-            echo "shard-arg=--shard=$SHARD_INDEX/$TOTAL_SHARDS" >> $GITHUB_OUTPUT
-            echo "grep-pattern=" >> $GITHUB_OUTPUT
-            echo "test-count=0" >> $GITHUB_OUTPUT
-            echo "expected-duration=0" >> $GITHUB_OUTPUT
-            echo "is-optimal=false" >> $GITHUB_OUTPUT
-          fi
+          echo "total-tests=0" >> $GITHUB_OUTPUT
+          echo "is-optimal=false" >> $GITHUB_OUTPUT
           exit 0
         fi
 
-        # Extract common data
+        # Extract data from result
         IS_OPTIMAL=$(echo "$RESULT" | jq -r ".isOptimal // false")
+        TOTAL_TESTS=$(echo "$RESULT" | jq -r ".totalTests // .totalFiles // 0")
         
-        # All-shards outputs (for get-shard action)
         echo "use-orchestrator=true" >> $GITHUB_OUTPUT
         echo "shard-files=$(echo "$RESULT" | jq -c '.shards')" >> $GITHUB_OUTPUT
-        echo "grep-patterns=$(echo "$RESULT" | jq -c '.grepPatterns // {}')" >> $GITHUB_OUTPUT
-        echo "test-locations=$(echo "$RESULT" | jq -c '.testLocations // {}')" >> $GITHUB_OUTPUT
         echo "expected-durations=$(echo "$RESULT" | jq -c '.expectedDurations')" >> $GITHUB_OUTPUT
+        echo "total-tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+        echo "is-optimal=$IS_OPTIMAL" >> $GITHUB_OUTPUT
 
-        # If shard-index provided, also output single-shard data (legacy mode)
-        if [ -n "$SHARD_INDEX" ]; then
-          GREP_PATTERN=$(echo "$RESULT" | jq -r ".grepPatterns[\"$SHARD_INDEX\"] // .grepPatterns[$SHARD_INDEX] // \"\"")
-          TEST_COUNT=$(echo "$RESULT" | jq -r "(.shards[\"$SHARD_INDEX\"] // .shards[$SHARD_INDEX]) | length // 0")
-          EXPECTED_DURATION=$(echo "$RESULT" | jq -r ".expectedDurations[\"$SHARD_INDEX\"] // .expectedDurations[$SHARD_INDEX] // 0")
-
-          # Check if shard is empty (fallback to native)
-          if [ -z "$GREP_PATTERN" ] || [ "$TEST_COUNT" = "0" ]; then
-            echo "::notice::No tests assigned to shard $SHARD_INDEX, using native sharding"
-            echo "use-native-sharding=true" >> $GITHUB_OUTPUT
-            echo "shard-arg=--shard=$SHARD_INDEX/$TOTAL_SHARDS" >> $GITHUB_OUTPUT
-          else
-            echo "use-native-sharding=false" >> $GITHUB_OUTPUT
-            echo "shard-arg=" >> $GITHUB_OUTPUT
-          fi
-
-          echo "grep-pattern=$GREP_PATTERN" >> $GITHUB_OUTPUT
-          echo "test-count=$TEST_COUNT" >> $GITHUB_OUTPUT
-          echo "expected-duration=$EXPECTED_DURATION" >> $GITHUB_OUTPUT
-          echo "is-optimal=$IS_OPTIMAL" >> $GITHUB_OUTPUT
-
-          echo "Assigned $TEST_COUNT tests to shard $SHARD_INDEX (expected: ${EXPECTED_DURATION}ms, optimal: $IS_OPTIMAL)"
-        else
-          echo "is-optimal=$IS_OPTIMAL" >> $GITHUB_OUTPUT
-          
-          # Log summary
-          echo "### Orchestrator Assignment" >> $GITHUB_STEP_SUMMARY
-          for i in $(seq 1 $TOTAL_SHARDS); do
-            FILES=$(echo "$RESULT" | jq -r ".shards.\"$i\" | length")
-            DURATION=$(echo "$RESULT" | jq -r ".expectedDurations.\"$i\"")
-            echo "- **Shard $i**: $FILES files (~$((DURATION / 1000))s)" >> $GITHUB_STEP_SUMMARY
-          done
-        fi
+        # Log summary
+        echo "### Orchestrator Assignment" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Shard | Tests | Expected Duration |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|-------|-------------------|" >> $GITHUB_STEP_SUMMARY
+        for i in $(seq 1 $TOTAL_SHARDS); do
+          COUNT=$(echo "$RESULT" | jq -r ".shards.\"$i\" | length")
+          DURATION=$(echo "$RESULT" | jq -r ".expectedDurations.\"$i\"")
+          DURATION_SEC=$((DURATION / 1000))
+          echo "| $i | $COUNT | ${DURATION_SEC}s |" >> $GITHUB_STEP_SUMMARY
+        done
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Total**: $TOTAL_TESTS tests, Optimal: $IS_OPTIMAL" >> $GITHUB_STEP_SUMMARY

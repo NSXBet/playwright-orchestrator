@@ -70,6 +70,23 @@ playwright-orchestrator merge-timing \
 2. **Run Tests**: Each shard reads its files from `needs.orchestrate.outputs`
 3. **Merge**: Collect timing from all shards, update history with EMA
 
+## Reporter Setup
+
+Add the reporter to your `playwright.config.ts`:
+
+```typescript
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  reporter: [
+    ['@nsxbet/playwright-orchestrator/reporter'],
+    ['html'],
+  ],
+});
+```
+
+The reporter reads `ORCHESTRATOR_SHARD_FILE` env var to filter tests for the current shard.
+
 ## GitHub Actions (External Repositories)
 
 Use the orchestrator in your own repository. The recommended pattern runs orchestration **once** before matrix jobs:
@@ -99,8 +116,6 @@ jobs:
           test-dir: ./e2e
           shards: 4
           timing-file: timing-data.json
-          project: Mobile Chrome  # Recommended for accurate parameterized test discovery
-          # No shard-index = outputs ALL shards
 
   # Phase 2: Run tests (parallel matrix)
   e2e:
@@ -113,7 +128,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Action handles parsing + fallback
+      # Action outputs shard-file path for reporter
       - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
         id: shard
         with:
@@ -121,8 +136,10 @@ jobs:
           shard-index: ${{ matrix.shard }}
           shards: 4
 
-      # Just works - either files or --shard=N/M
-      - run: npx playwright test ${{ steps.shard.outputs.test-args }}
+      # Reporter reads ORCHESTRATOR_SHARD_FILE to filter tests
+      - run: npx playwright test
+        env:
+          ORCHESTRATOR_SHARD_FILE: ${{ steps.shard.outputs.shard-file }}
 ```
 
 See [docs/external-integration.md](./docs/external-integration.md) for complete workflow with timing data persistence.

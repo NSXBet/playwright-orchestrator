@@ -112,17 +112,25 @@ This means:
 - A single outlier won't dramatically shift estimates
 - Gradual adaptation to changing test durations
 
-### Grep Pattern Generation
+### Test Filtering (Custom Reporter)
 
-To run only specific tests in a shard, the orchestrator generates Playwright `--grep` patterns:
+To run only specific tests in a shard, the orchestrator outputs a JSON file with test IDs. A custom Playwright reporter reads this file and filters tests using exact `Set.has()` matching.
 
+```typescript
+// playwright.config.ts
+reporter: [['@nsxbet/playwright-orchestrator/reporter'], ['html']]
 ```
-Test IDs: ["login.spec.ts::Auth::should login", "login.spec.ts::Auth::should logout"]
-                ↓
-Grep Pattern: "should login|should logout"
-```
 
-For very long patterns (> 4000 chars), it switches to `--grep-file` strategy.
+**Test ID Format**: `{relative-path}::{describe}::{test-title}`
+- Path is relative to CWD with forward slashes
+- Example: `e2e/login.spec.ts::Login::should login`
+
+This approach was chosen because:
+- `--grep` has substring collision issues
+- `file:line` breaks parameterized tests
+- CLI arguments have shell escaping problems
+
+See `docs/test-level-reporter.md` for the complete guide.
 
 ## Common Tasks
 
@@ -249,8 +257,8 @@ Actions do NOT handle cache/artifacts internally. Users control:
 | Action | Purpose |
 |--------|---------|
 | `setup-orchestrator` | Install and cache the CLI |
-| `orchestrate` | Assign tests to shards (omit `shard-index` for all shards, use `project` for accurate discovery) |
-| `get-shard` | Extract test arguments for a specific shard |
+| `orchestrate` | Assign tests to shards (outputs `shard-files` JSON) |
+| `get-shard` | Extract `shard-file` path for reporter-based filtering |
 | `extract-timing` | Extract timing from Playwright reports |
 | `merge-timing` | Merge timing data with EMA smoothing |
 
@@ -274,7 +282,7 @@ The regex-based fallback (`--use-fallback`) should only be used if Playwright `-
 If orchestration fails, workflows should fallback to Playwright's `--shard` flag:
 
 ```yaml
-# get-shard action handles this automatically
+# get-shard action outputs shard-file for reporter-based filtering
 - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
   id: shard
   with:
@@ -282,8 +290,10 @@ If orchestration fails, workflows should fallback to Playwright's `--shard` flag
     shard-index: ${{ matrix.shard }}
     shards: 4
 
-# test-args is either file list OR --shard=N/M
-- run: npx playwright test ${{ steps.shard.outputs.test-args }}
+# Use shard-file env var for reporter-based filtering
+- run: npx playwright test
+  env:
+    ORCHESTRATOR_SHARD_FILE: ${{ steps.shard.outputs.shard-file }}
 ```
 
 ### Cancellation-Aware Steps
