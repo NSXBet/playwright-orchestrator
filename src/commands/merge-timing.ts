@@ -4,16 +4,12 @@ import { Command, Flags } from '@oclif/core';
 import {
   DEFAULT_EMA_ALPHA,
   DEFAULT_PRUNE_DAYS,
-  isTimingDataV2,
   loadTimingData,
-  mergeTestTimingData,
   mergeTimingData,
-  pruneTestTimingData,
   pruneTimingData,
   type ShardTimingArtifact,
   saveTimingData,
-  type TestShardTimingArtifact,
-  type TimingDataV2,
+  type TimingData,
 } from '../core/index.js';
 
 export default class MergeTiming extends Command {
@@ -23,7 +19,6 @@ export default class MergeTiming extends Command {
   static override examples = [
     '<%= config.bin %> merge-timing --existing ./timing.json --new ./shard-1.json ./shard-2.json --output ./timing.json',
     '<%= config.bin %> merge-timing --new ./shard-*.json --output ./timing.json --alpha 0.3 --prune-days 30',
-    '<%= config.bin %> merge-timing --new ./shard-*.json --output ./timing.json --level test',
   ];
 
   static override flags = {
@@ -51,15 +46,9 @@ export default class MergeTiming extends Command {
       description: 'Remove entries older than N days',
       default: DEFAULT_PRUNE_DAYS,
     }),
-    'current-files': Flags.string({
+    'current-tests': Flags.string({
       description:
-        'Path to file listing current test files/IDs (for pruning deleted tests)',
-    }),
-    level: Flags.string({
-      char: 'l',
-      description: 'Data level: file or test',
-      default: 'test',
-      options: ['file', 'test'],
+        'Path to file listing current test IDs (for pruning deleted tests)',
     }),
     verbose: Flags.boolean({
       char: 'v',
@@ -76,35 +65,10 @@ export default class MergeTiming extends Command {
       this.error('Alpha must be a number between 0 and 1');
     }
 
-    if (flags.level === 'test') {
-      await this.runTestLevel(flags, alpha);
-    } else {
-      await this.runFileLevel(flags, alpha);
-    }
-  }
-
-  private async runTestLevel(
-    flags: {
-      existing?: string;
-      new: string[];
-      output: string;
-      'prune-days': number;
-      'current-files'?: string;
-      verbose: boolean;
-    },
-    alpha: number,
-  ): Promise<void> {
     // Load existing timing data
-    let existingData: TimingDataV2 | null = null;
+    let existingData: TimingData | null = null;
     if (flags.existing) {
-      const loaded = loadTimingData(flags.existing);
-      if (isTimingDataV2(loaded)) {
-        existingData = loaded;
-      } else if (flags.verbose) {
-        this.warn(
-          'Existing timing data is v1 (file-level), starting fresh for test-level',
-        );
-      }
+      existingData = loadTimingData(flags.existing);
     }
 
     if (flags.verbose) {
@@ -115,14 +79,13 @@ export default class MergeTiming extends Command {
     }
 
     // Load new timing artifacts
-    const newArtifacts: TestShardTimingArtifact[] = [];
+    const newArtifacts: ShardTimingArtifact[] = [];
 
     for (const artifactPath of flags.new) {
       try {
         const content = fs.readFileSync(path.resolve(artifactPath), 'utf-8');
-        const artifact = JSON.parse(content) as TestShardTimingArtifact;
+        const artifact = JSON.parse(content) as ShardTimingArtifact;
 
-        // Check if it has tests (v2) or files (v1)
         if (artifact.tests) {
           newArtifacts.push(artifact);
           if (flags.verbose) {
@@ -131,9 +94,7 @@ export default class MergeTiming extends Command {
             );
           }
         } else if (flags.verbose) {
-          this.warn(
-            `Artifact ${artifactPath} is file-level, skipping for test-level merge`,
-          );
+          this.warn(`Artifact ${artifactPath} has no tests, skipping`);
         }
       } catch {
         this.warn(`Failed to load timing artifact: ${artifactPath}`);
@@ -141,12 +102,12 @@ export default class MergeTiming extends Command {
     }
 
     if (newArtifacts.length === 0) {
-      this.warn('No valid test-level timing artifacts found');
+      this.warn('No valid timing artifacts found');
       return;
     }
 
     // Merge timing data using EMA
-    let mergedData = mergeTestTimingData(existingData, newArtifacts, alpha);
+    let mergedData = mergeTimingData(existingData, newArtifacts, alpha);
 
     if (flags.verbose) {
       this.log(
@@ -156,20 +117,20 @@ export default class MergeTiming extends Command {
 
     // Load current test IDs for pruning if provided
     let currentTestIds: string[] | undefined;
-    if (flags['current-files']) {
+    if (flags['current-tests']) {
       try {
-        const content = fs.readFileSync(flags['current-files'], 'utf-8');
+        const content = fs.readFileSync(flags['current-tests'], 'utf-8');
         currentTestIds = content.split('\n').filter((line) => line.trim());
       } catch {
         this.warn(
-          `Failed to load current test IDs list: ${flags['current-files']}`,
+          `Failed to load current test IDs list: ${flags['current-tests']}`,
         );
       }
     }
 
     // Prune old entries
     const beforePrune = Object.keys(mergedData.tests).length;
-    mergedData = pruneTestTimingData(
+    mergedData = pruneTimingData(
       mergedData,
       flags['prune-days'],
       currentTestIds,
@@ -191,115 +152,6 @@ export default class MergeTiming extends Command {
     this.log(
       JSON.stringify({
         tests: Object.keys(mergedData.tests).length,
-        updatedAt: mergedData.updatedAt,
-        version: mergedData.version,
-      }),
-    );
-  }
-
-  private async runFileLevel(
-    flags: {
-      existing?: string;
-      new: string[];
-      output: string;
-      'prune-days': number;
-      'current-files'?: string;
-      verbose: boolean;
-    },
-    alpha: number,
-  ): Promise<void> {
-    // Load existing timing data
-    const existingData = flags.existing
-      ? loadTimingData(flags.existing)
-      : { version: 1 as const, updatedAt: new Date().toISOString(), files: {} };
-
-    if (flags.verbose) {
-      const fileCount =
-        'files' in existingData ? Object.keys(existingData.files).length : 0;
-      this.log(`Loaded existing timing data with ${fileCount} files`);
-    }
-
-    // Load new timing artifacts
-    const newArtifacts: ShardTimingArtifact[] = [];
-
-    for (const artifactPath of flags.new) {
-      try {
-        const content = fs.readFileSync(path.resolve(artifactPath), 'utf-8');
-        const artifact = JSON.parse(content) as ShardTimingArtifact;
-
-        // Check if it has files (v1)
-        if (artifact.files) {
-          newArtifacts.push(artifact);
-          if (flags.verbose) {
-            this.log(
-              `Loaded timing artifact from shard ${artifact.shard} with ${Object.keys(artifact.files).length} files`,
-            );
-          }
-        } else if (flags.verbose) {
-          this.warn(
-            `Artifact ${artifactPath} is test-level, skipping for file-level merge`,
-          );
-        }
-      } catch {
-        this.warn(`Failed to load timing artifact: ${artifactPath}`);
-      }
-    }
-
-    if (newArtifacts.length === 0) {
-      this.warn('No valid file-level timing artifacts found');
-      return;
-    }
-
-    // Merge timing data using EMA
-    let mergedData = mergeTimingData(existingData, newArtifacts, alpha);
-
-    if (flags.verbose) {
-      this.log(
-        `Merged timing data now has ${Object.keys(mergedData.files).length} files`,
-      );
-    }
-
-    // Load current files for pruning if provided
-    let currentFiles: string[] | undefined;
-    if (flags['current-files']) {
-      try {
-        const content = fs.readFileSync(flags['current-files'], 'utf-8');
-        currentFiles = content.split('\n').filter((line) => line.trim());
-      } catch {
-        this.warn(
-          `Failed to load current files list: ${flags['current-files']}`,
-        );
-      }
-    }
-
-    // Prune old entries
-    const beforePrune = Object.keys(mergedData.files).length;
-    const prunedData = pruneTimingData(
-      mergedData,
-      flags['prune-days'],
-      currentFiles,
-    );
-    // pruneTimingData can return v1 or v2, but for file-level we expect v1
-    if ('files' in prunedData) {
-      mergedData = prunedData as typeof mergedData;
-    }
-    const afterPrune = Object.keys(mergedData.files).length;
-
-    if (flags.verbose && beforePrune !== afterPrune) {
-      this.log(`Pruned ${beforePrune - afterPrune} old entries`);
-    }
-
-    // Save merged data
-    saveTimingData(flags.output, mergedData);
-
-    if (flags.verbose) {
-      this.log(`Saved merged timing data to ${flags.output}`);
-    }
-
-    // Output summary
-    this.log(
-      JSON.stringify({
-        files: Object.keys(mergedData.files).length,
         updatedAt: mergedData.updatedAt,
         version: mergedData.version,
       }),

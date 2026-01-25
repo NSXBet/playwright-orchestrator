@@ -1,20 +1,10 @@
 import * as fs from 'node:fs';
 import type {
-  FileTimingData,
   ShardTimingArtifact,
-  TestShardTimingArtifact,
   TestTimingData,
   TimingData,
-  TimingDataV1,
-  TimingDataV2,
 } from './types.js';
-import {
-  createEmptyTimingData,
-  isTimingDataV1,
-  isTimingDataV2,
-  TIMING_DATA_VERSION,
-  TIMING_DATA_VERSION_V1,
-} from './types.js';
+import { createEmptyTimingData, TIMING_DATA_VERSION } from './types.js';
 
 /**
  * Default EMA smoothing factor (alpha)
@@ -30,10 +20,8 @@ export const DEFAULT_PRUNE_DAYS = 30;
 /**
  * Load timing data from a JSON file
  *
- * Supports both v1 (file-level) and v2 (test-level) formats.
- *
  * @param filePath - Path to the timing data JSON file
- * @returns Timing data, or empty data if file doesn't exist
+ * @returns Timing data, or empty data if file doesn't exist or is invalid
  */
 export function loadTimingData(filePath: string): TimingData {
   try {
@@ -43,18 +31,12 @@ export function loadTimingData(filePath: string): TimingData {
       [key: string]: unknown;
     };
 
-    // Handle v1 format
-    if (data.version === TIMING_DATA_VERSION_V1) {
-      // Return as-is for backwards compatibility
-      return data as unknown as TimingDataV1;
-    }
-
-    // Handle v2 format
+    // Only accept current version
     if (data.version === TIMING_DATA_VERSION) {
-      return data as unknown as TimingDataV2;
+      return data as unknown as TimingData;
     }
 
-    // Unknown version - return empty v2 data
+    // Unknown or old version - return empty data
     console.warn(
       `Timing data version mismatch: expected ${TIMING_DATA_VERSION}, got ${data.version}. Using empty data.`,
     );
@@ -91,72 +73,21 @@ export function calculateEMA(
 }
 
 /**
- * Merge new timing measurements into existing timing data using EMA (v1 - file-level)
+ * Merge new timing measurements into existing timing data using EMA
  *
- * @param existing - Existing timing data (v1)
+ * @param existing - Existing timing data (or null for fresh start)
  * @param newMeasurements - New measurements from shard artifacts
  * @param alpha - EMA smoothing factor
  * @returns Updated timing data
  */
 export function mergeTimingData(
-  existing: TimingData,
+  existing: TimingData | null,
   newMeasurements: ShardTimingArtifact[],
   alpha: number = DEFAULT_EMA_ALPHA,
-): TimingDataV1 {
+): TimingData {
   const now = new Date().toISOString();
 
-  // Convert v2 to v1 if needed (lossy - just take file names)
-  const existingFiles = isTimingDataV1(existing)
-    ? existing.files
-    : aggregateTestsToFiles(existing);
-
-  const merged: TimingDataV1 = {
-    version: TIMING_DATA_VERSION_V1,
-    updatedAt: now,
-    files: { ...existingFiles },
-  };
-
-  for (const artifact of newMeasurements) {
-    for (const [file, duration] of Object.entries(artifact.files)) {
-      const existingData = merged.files[file];
-
-      if (existingData) {
-        // Apply EMA to existing data
-        merged.files[file] = {
-          duration: calculateEMA(existingData.duration, duration, alpha),
-          runs: existingData.runs + 1,
-          lastRun: now,
-        };
-      } else {
-        // First measurement for this file
-        merged.files[file] = {
-          duration,
-          runs: 1,
-          lastRun: now,
-        };
-      }
-    }
-  }
-
-  return merged;
-}
-
-/**
- * Merge new timing measurements into existing timing data using EMA (v2 - test-level)
- *
- * @param existing - Existing timing data (v2)
- * @param newMeasurements - New measurements from shard artifacts
- * @param alpha - EMA smoothing factor
- * @returns Updated timing data
- */
-export function mergeTestTimingData(
-  existing: TimingDataV2 | null,
-  newMeasurements: TestShardTimingArtifact[],
-  alpha: number = DEFAULT_EMA_ALPHA,
-): TimingDataV2 {
-  const now = new Date().toISOString();
-
-  const merged: TimingDataV2 = {
+  const merged: TimingData = {
     version: TIMING_DATA_VERSION,
     updatedAt: now,
     tests: existing ? { ...existing.tests } : {},
@@ -199,108 +130,22 @@ function extractFileFromTestId(testId: string): string {
 }
 
 /**
- * Aggregate test-level timing to file-level (for backwards compatibility)
- */
-function aggregateTestsToFiles(
-  data: TimingDataV2,
-): Record<string, FileTimingData> {
-  const fileMap = new Map<
-    string,
-    { totalDuration: number; count: number; lastRun: string }
-  >();
-
-  for (const testData of Object.values(data.tests)) {
-    const existing = fileMap.get(testData.file);
-    if (existing) {
-      existing.totalDuration += testData.duration;
-      existing.count += 1;
-      if (testData.lastRun > existing.lastRun) {
-        existing.lastRun = testData.lastRun;
-      }
-    } else {
-      fileMap.set(testData.file, {
-        totalDuration: testData.duration,
-        count: 1,
-        lastRun: testData.lastRun,
-      });
-    }
-  }
-
-  const result: Record<string, FileTimingData> = {};
-  for (const [file, stats] of fileMap) {
-    result[file] = {
-      duration: stats.totalDuration,
-      runs: stats.count,
-      lastRun: stats.lastRun,
-    };
-  }
-
-  return result;
-}
-
-/**
- * Prune old entries from timing data (v1 - file-level)
+ * Prune old entries from timing data
  *
  * Removes entries that:
  * 1. Haven't been run in more than `days` days
- * 2. No longer exist in the current test files (if provided)
- *
- * @param data - Timing data to prune
- * @param days - Number of days after which to remove entries
- * @param currentFiles - Optional list of current test files (to remove deleted tests)
- * @returns Pruned timing data
- */
-export function pruneTimingData(
-  data: TimingData,
-  days: number = DEFAULT_PRUNE_DAYS,
-  currentFiles?: string[],
-): TimingData {
-  if (isTimingDataV2(data)) {
-    return pruneTestTimingData(data, days, currentFiles);
-  }
-
-  const now = new Date();
-  const cutoffDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  const currentFileSet = currentFiles ? new Set(currentFiles) : null;
-
-  const prunedFiles: Record<string, FileTimingData> = {};
-
-  for (const [file, timing] of Object.entries(data.files)) {
-    const lastRun = new Date(timing.lastRun);
-
-    // Skip if too old
-    if (lastRun < cutoffDate) {
-      continue;
-    }
-
-    // Skip if file no longer exists (when currentFiles is provided)
-    if (currentFileSet && !currentFileSet.has(file)) {
-      continue;
-    }
-
-    prunedFiles[file] = timing;
-  }
-
-  return {
-    ...data,
-    updatedAt: new Date().toISOString(),
-    files: prunedFiles,
-  };
-}
-
-/**
- * Prune old entries from timing data (v2 - test-level)
+ * 2. No longer exist in the current tests (if provided)
  *
  * @param data - Timing data to prune
  * @param days - Number of days after which to remove entries
  * @param currentTestIds - Optional list of current test IDs (to remove deleted tests)
  * @returns Pruned timing data
  */
-export function pruneTestTimingData(
-  data: TimingDataV2,
+export function pruneTimingData(
+  data: TimingData,
   days: number = DEFAULT_PRUNE_DAYS,
   currentTestIds?: string[],
-): TimingDataV2 {
+): TimingData {
   const now = new Date();
   const cutoffDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const currentTestSet = currentTestIds ? new Set(currentTestIds) : null;
@@ -331,21 +176,30 @@ export function pruneTestTimingData(
 }
 
 /**
- * Get duration for a file from timing data (v1)
+ * Get duration for a test from timing data
  *
  * @param data - Timing data
- * @param file - File name
+ * @param testId - Test ID
  * @returns Duration in ms, or undefined if not found
+ */
+export function getTestDuration(
+  data: TimingData,
+  testId: string,
+): number | undefined {
+  return data.tests[testId]?.duration;
+}
+
+/**
+ * Get total duration for a file by aggregating all tests in that file
+ *
+ * @param data - Timing data
+ * @param file - File path
+ * @returns Total duration in ms, or undefined if no tests found
  */
 export function getFileDuration(
   data: TimingData,
   file: string,
 ): number | undefined {
-  if (isTimingDataV1(data)) {
-    return data.files[file]?.duration;
-  }
-
-  // For v2 data, aggregate tests in this file
   const fileTests = Object.entries(data.tests).filter(
     ([, t]) => t.file === file,
   );
@@ -354,18 +208,4 @@ export function getFileDuration(
   }
 
   return fileTests.reduce((sum, [, t]) => sum + t.duration, 0);
-}
-
-/**
- * Get duration for a test from timing data (v2)
- *
- * @param data - Timing data (v2)
- * @param testId - Test ID
- * @returns Duration in ms, or undefined if not found
- */
-export function getTestDuration(
-  data: TimingDataV2,
-  testId: string,
-): number | undefined {
-  return data.tests[testId]?.duration;
 }

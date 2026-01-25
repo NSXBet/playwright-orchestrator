@@ -1,20 +1,16 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Command, Flags } from '@oclif/core';
-import type {
-  PlaywrightReport,
-  ShardTimingArtifact,
-  TestShardTimingArtifact,
-} from '../core/index.js';
+import type { PlaywrightReport, ShardTimingArtifact } from '../core/index.js';
 import { buildTestId } from '../core/index.js';
 
 export default class ExtractTiming extends Command {
   static override description =
-    'Extract timing data from Playwright JSON report (file-level or test-level)';
+    'Extract timing data from Playwright JSON report';
 
   static override examples = [
     '<%= config.bin %> extract-timing --report-file ./playwright-report/results.json --output-file ./timing.json',
-    '<%= config.bin %> extract-timing --report-file ./results.json --shard 1 --project "Mobile Chrome" --level test',
+    '<%= config.bin %> extract-timing --report-file ./results.json --shard 1 --project "Mobile Chrome"',
   ];
 
   static override flags = {
@@ -37,12 +33,6 @@ export default class ExtractTiming extends Command {
       description: 'Playwright project name',
       default: 'default',
     }),
-    level: Flags.string({
-      char: 'l',
-      description: 'Extraction level: file or test',
-      default: 'test',
-      options: ['file', 'test'],
-    }),
     verbose: Flags.boolean({
       char: 'v',
       description: 'Show verbose output',
@@ -64,45 +54,23 @@ export default class ExtractTiming extends Command {
       this.error(`Failed to read Playwright report: ${reportPath}`);
     }
 
-    let output: string;
+    // Extract test-level durations
+    const testDurations = this.extractTestDurations(report);
 
-    if (flags.level === 'test') {
-      // Extract test-level durations
-      const testDurations = this.extractTestDurations(report);
-
-      if (flags.verbose) {
-        this.log(
-          `Extracted timing for ${Object.keys(testDurations).length} tests`,
-        );
-      }
-
-      // Create test-level artifact
-      const artifact: TestShardTimingArtifact = {
-        shard: flags.shard,
-        project: flags.project,
-        tests: testDurations,
-      };
-
-      output = JSON.stringify(artifact, null, 2);
-    } else {
-      // Extract file-level durations (legacy)
-      const fileDurations = this.extractFileDurations(report);
-
-      if (flags.verbose) {
-        this.log(
-          `Extracted timing for ${Object.keys(fileDurations).length} files`,
-        );
-      }
-
-      // Create file-level artifact
-      const artifact: ShardTimingArtifact = {
-        shard: flags.shard,
-        project: flags.project,
-        files: fileDurations,
-      };
-
-      output = JSON.stringify(artifact, null, 2);
+    if (flags.verbose) {
+      this.log(
+        `Extracted timing for ${Object.keys(testDurations).length} tests`,
+      );
     }
+
+    // Create artifact
+    const artifact: ShardTimingArtifact = {
+      shard: flags.shard,
+      project: flags.project,
+      tests: testDurations,
+    };
+
+    const output = JSON.stringify(artifact, null, 2);
 
     // Output
     if (flags['output-file']) {
@@ -182,70 +150,10 @@ export default class ExtractTiming extends Command {
   }
 
   /**
-   * Extract file durations from Playwright report (legacy file-level)
-   *
-   * The report structure has nested suites where the top-level suite
-   * represents the file. We sum up all test durations within each file.
-   */
-  private extractFileDurations(
-    report: PlaywrightReport,
-  ): Record<string, number> {
-    const fileDurations: Record<string, number> = {};
-
-    for (const suite of report.suites) {
-      const file = this.normalizeFilePath(suite.file);
-      const duration = this.calculateSuiteDuration(suite);
-      fileDurations[file] = duration;
-    }
-
-    return fileDurations;
-  }
-
-  /**
    * Normalize file path to be relative and consistent
+   * Uses path relative to CWD for consistency with reporter and discovery
    */
   private normalizeFilePath(filePath: string): string {
-    // Extract just the filename or relative path
-    // Remove any absolute path prefix
-    const parts = filePath.split('/');
-
-    // Find the index of common test directories
-    const testDirIndex = parts.findIndex(
-      (p) => p === 'e2e' || p === 'test' || p === '__tests__',
-    );
-
-    if (testDirIndex !== -1) {
-      return parts.slice(testDirIndex + 1).join('/');
-    }
-
-    // Just return the filename
-    return parts[parts.length - 1] ?? filePath;
-  }
-
-  /**
-   * Calculate total duration for a suite (recursively including nested suites)
-   */
-  private calculateSuiteDuration(suite: PlaywrightReport['suites'][0]): number {
-    let total = 0;
-
-    // Sum durations from specs
-    if (suite.specs) {
-      for (const spec of suite.specs) {
-        for (const test of spec.tests) {
-          for (const result of test.results) {
-            total += result.duration;
-          }
-        }
-      }
-    }
-
-    // Sum durations from nested suites
-    if (suite.suites) {
-      for (const nestedSuite of suite.suites) {
-        total += this.calculateSuiteDuration(nestedSuite);
-      }
-    }
-
-    return total;
+    return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
   }
 }

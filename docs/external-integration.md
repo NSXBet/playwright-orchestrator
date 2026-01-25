@@ -9,8 +9,8 @@ The orchestrator provides GitHub Actions that you can reference directly in your
 | Action | Purpose |
 |--------|---------|
 | `setup-orchestrator` | Install and cache the CLI |
-| `orchestrate` | Assign tests to shards (outputs all shards when `shard-index` omitted) |
-| `get-shard` | Extract test arguments for a specific shard |
+| `orchestrate` | Assign tests to shards (outputs `shard-files` JSON) |
+| `get-shard` | Extract `shard-file` path for reporter-based filtering |
 | `extract-timing` | Extract timing from Playwright reports |
 | `merge-timing` | Merge timing data from multiple shards |
 
@@ -38,7 +38,7 @@ The recommended pattern uses **three phases** to avoid redundant orchestration:
 - **Consistency**: All shards get assignments from the same computation
 - **Simplicity**: Actions handle all parsing and fallback logic
 
-## Complete Workflow with Timing Data
+## Complete Workflow with Reporter-Based Filtering
 
 ```yaml
 name: E2E Tests
@@ -59,7 +59,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       shard-files: ${{ steps.orchestrate.outputs.shard-files }}
-      grep-patterns: ${{ steps.orchestrate.outputs.grep-patterns }}
     steps:
       - uses: actions/checkout@v4
 
@@ -84,8 +83,7 @@ jobs:
           test-dir: ./e2e
           shards: ${{ env.SHARDS }}
           timing-file: timing-data.json
-          project: chromium  # Recommended for accurate parameterized test discovery
-          # No shard-index = outputs ALL shards
+          level: test
 
   # ============================================
   # Phase 2: Run tests (parallel matrix)
@@ -109,19 +107,20 @@ jobs:
       - run: npm ci
       - run: npx playwright install chromium --with-deps
 
-      # Action handles parsing + fallback
+      # Action extracts shard-file path for reporter
       - name: Get shard assignment
         uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
         id: shard
         with:
           shard-files: ${{ needs.orchestrate.outputs.shard-files }}
-          grep-patterns: ${{ needs.orchestrate.outputs.grep-patterns }}
           shard-index: ${{ matrix.shard }}
           shards: ${{ env.SHARDS }}
 
-      # Just works - --grep="pattern", files, or --shard=N/M
+      # Reporter reads ORCHESTRATOR_SHARD_FILE to filter tests
       - name: Run Playwright tests
-        run: npx playwright test ${{ steps.shard.outputs.test-args }}
+        run: npx playwright test
+        env:
+          ORCHESTRATOR_SHARD_FILE: ${{ steps.shard.outputs.shard-file }}
 
       # Extract timing (runs unless cancelled)
       - name: Setup Orchestrator
@@ -135,7 +134,6 @@ jobs:
           report-file: playwright-report/results.json
           output-file: timing-shard-${{ matrix.shard }}.json
           shard: ${{ matrix.shard }}
-          level: file
 
       # YOU control artifact location
       - name: Upload timing artifact
@@ -181,7 +179,6 @@ jobs:
           existing-file: timing-data.json
           new-files: timing-shard-*.json
           output-file: timing-data.json
-          level: file
 
       # YOU control cache location
       - name: Save timing cache
@@ -190,6 +187,23 @@ jobs:
           path: timing-data.json
           key: playwright-timing-${{ github.ref_name }}-${{ github.run_id }}
 ```
+
+## Reporter Setup
+
+Add the reporter to your `playwright.config.ts`:
+
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  reporter: [
+    ["@nsxbet/playwright-orchestrator/reporter"],
+    ["html"],
+  ],
+});
+```
+
+The reporter is included in the package - no need to copy any files.
 
 ## Action Reference
 
@@ -205,7 +219,7 @@ Installs and caches the CLI.
 
 ### orchestrate
 
-Assigns tests to shards. Omit `shard-index` to output ALL shards (recommended for three-phase pattern).
+Assigns tests to shards.
 
 ```yaml
 - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
@@ -214,37 +228,35 @@ Assigns tests to shards. Omit `shard-index` to output ALL shards (recommended fo
     test-dir: ./e2e           # Required: path to tests
     shards: 4                 # Required: total shard count
     timing-file: ''           # Optional: path to timing data
-    level: file               # Optional: 'test' or 'file' (file recommended)
-    project: ''               # Optional: Playwright project name (recommended for accurate discovery)
-    # shard-index: OMIT for all-shards mode
+    level: test               # Optional: 'test' or 'file'
+    project: ''               # Optional: Playwright project name
 ```
 
-**Note**: The `project` parameter is recommended when using `level: test` to ensure accurate discovery of parameterized tests (e.g., `test.each`). Without it, some tests may not be discovered correctly.
-
-**Outputs (all-shards mode):**
-- `shard-files`: JSON object with file/test assignments for all shards
-- `grep-patterns`: JSON object with grep patterns for all shards (test-level only)
+**Outputs:**
+- `shard-files`: JSON object with test assignments for all shards
 - `expected-durations`: JSON object with expected durations per shard
+- `total-tests`: Total number of tests
+- `is-optimal`: Whether distribution is optimal
 - `use-orchestrator`: Whether orchestration succeeded
 
 ### get-shard
 
-Extracts test arguments for a specific shard. Handles parsing and fallback automatically.
+Extracts shard-file path for a specific shard.
 
 ```yaml
 - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
   id: shard
   with:
     shard-files: ${{ needs.orchestrate.outputs.shard-files }}
-    grep-patterns: ${{ needs.orchestrate.outputs.grep-patterns }}  # For test-level
     shard-index: ${{ matrix.shard }}
     shards: 4                 # For fallback to --shard=N/M
 ```
 
 **Outputs:**
-- `test-args`: Arguments for playwright test (`--grep="pattern"`, files, or `--shard=N/M`)
-- `has-files`: Whether this shard has orchestrated files
-- `file-list`: Space-separated file list (empty if fallback)
+- `shard-file`: Path to JSON file with test IDs for reporter
+- `has-tests`: Whether this shard has tests
+- `test-count`: Number of tests in this shard
+- `fallback-args`: Native Playwright shard argument (`--shard=N/M`)
 
 ### extract-timing
 
@@ -257,7 +269,6 @@ Extracts timing from Playwright reports.
     output-file: ./timing.json   # Required: output path
     shard: 1                     # Required: shard index
     project: default             # Optional: Playwright project
-    level: file                  # Optional: 'test' or 'file' (file recommended)
 ```
 
 ### merge-timing
@@ -272,7 +283,6 @@ Merges timing data with EMA smoothing.
     output-file: ./timing.json   # Required: output path
     alpha: '0.3'                 # Optional: EMA factor
     prune-days: '30'             # Optional: remove old entries
-    level: file                  # Optional: 'test' or 'file' (file recommended)
 ```
 
 ## Fallback Behavior

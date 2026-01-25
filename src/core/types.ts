@@ -1,17 +1,5 @@
 /**
- * Timing data for a single test file (legacy v1 format)
- */
-export interface FileTimingData {
-  /** Duration in milliseconds */
-  duration: number;
-  /** Number of times this file has been measured */
-  runs: number;
-  /** ISO timestamp of last measurement */
-  lastRun: string;
-}
-
-/**
- * Timing data for a single test (v2 format - test-level)
+ * Timing data for a single test
  */
 export interface TestTimingData {
   /** Source file containing this test */
@@ -25,33 +13,16 @@ export interface TestTimingData {
 }
 
 /**
- * Complete timing data structure stored in cache (v1 - file-level)
+ * Complete timing data structure stored in cache (test-level)
  */
-export interface TimingDataV1 {
-  /** Schema version (1) */
-  version: 1;
-  /** ISO timestamp of last update */
-  updatedAt: string;
-  /** Map of file names to their timing data */
-  files: Record<string, FileTimingData>;
-}
-
-/**
- * Complete timing data structure stored in cache (v2 - test-level)
- */
-export interface TimingDataV2 {
-  /** Schema version (2) */
+export interface TimingData {
+  /** Schema version */
   version: 2;
   /** ISO timestamp of last update */
   updatedAt: string;
   /** Map of test IDs to their timing data */
   tests: Record<string, TestTimingData>;
 }
-
-/**
- * Union type for timing data (supports both versions)
- */
-export type TimingData = TimingDataV1 | TimingDataV2;
 
 /**
  * Input for the shard assignment algorithm (file-level)
@@ -123,10 +94,6 @@ export interface AssignResult {
 export interface TestAssignResult {
   /** Map of shard index to list of test IDs */
   shards: Record<number, string[]>;
-  /** Map of shard index to grep pattern */
-  grepPatterns: Record<number, string>;
-  /** Map of shard index to test locations (file:line format) */
-  testLocations: Record<number, string[]>;
   /** Expected duration per shard */
   expectedDurations: Record<number, number>;
   /** Total number of tests */
@@ -138,21 +105,9 @@ export interface TestAssignResult {
 }
 
 /**
- * Per-shard timing artifact uploaded after test run (file-level, v1)
+ * Per-shard timing artifact uploaded after test run (test-level)
  */
 export interface ShardTimingArtifact {
-  /** Shard index (1-based) */
-  shard: number;
-  /** Browser project name */
-  project: string;
-  /** Map of file names to duration in ms */
-  files: Record<string, number>;
-}
-
-/**
- * Per-shard timing artifact uploaded after test run (test-level, v2)
- */
-export interface TestShardTimingArtifact {
   /** Shard index (1-based) */
   shard: number;
   /** Browser project name */
@@ -237,28 +192,14 @@ export interface PlaywrightListSpec {
 /** Current schema version for timing data */
 export const TIMING_DATA_VERSION = 2;
 
-/** Legacy schema version */
-export const TIMING_DATA_VERSION_V1 = 1;
-
 /**
- * Create an empty timing data structure (v2 - test-level)
+ * Create an empty timing data structure
  */
-export function createEmptyTimingData(): TimingDataV2 {
+export function createEmptyTimingData(): TimingData {
   return {
     version: TIMING_DATA_VERSION,
     updatedAt: new Date().toISOString(),
     tests: {},
-  };
-}
-
-/**
- * Create an empty timing data structure (v1 - file-level, for backwards compatibility)
- */
-export function createEmptyTimingDataV1(): TimingDataV1 {
-  return {
-    version: TIMING_DATA_VERSION_V1,
-    updatedAt: new Date().toISOString(),
-    files: {},
   };
 }
 
@@ -268,14 +209,6 @@ export function createEmptyTimingDataV1(): TimingDataV1 {
  */
 export function buildTestId(file: string, titlePath: string[]): string {
   return [file, ...titlePath].join('::');
-}
-
-/**
- * Build a test location from file and line
- * Format: file:line (used for exact test filtering in Playwright)
- */
-export function buildTestLocation(file: string, line: number): string {
-  return `${file}:${line}`;
 }
 
 /**
@@ -290,18 +223,4 @@ export function parseTestId(testId: string): {
     file: parts[0] ?? '',
     titlePath: parts.slice(1),
   };
-}
-
-/**
- * Check if timing data is v2 (test-level)
- */
-export function isTimingDataV2(data: TimingData): data is TimingDataV2 {
-  return data.version === 2;
-}
-
-/**
- * Check if timing data is v1 (file-level)
- */
-export function isTimingDataV1(data: TimingData): data is TimingDataV1 {
-  return data.version === 1;
 }

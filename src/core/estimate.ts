@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { DiscoveredTest, TimingDataV2 } from './types.js';
+import type { DiscoveredTest, TimingData } from './types.js';
 import { parseTestId } from './types.js';
 
 /**
@@ -71,12 +71,12 @@ export function estimateDurations(
  * 3. Default constant: Use DEFAULT_TEST_DURATION (30 seconds)
  *
  * @param testId - Test ID to estimate
- * @param timingData - Existing timing data (v2)
+ * @param timingData - Existing timing data
  * @returns Estimated duration in milliseconds
  */
 export function estimateTestDuration(
   testId: string,
-  timingData: TimingDataV2 | null,
+  timingData: TimingData | null,
 ): number {
   if (!timingData || Object.keys(timingData.tests).length === 0) {
     return DEFAULT_TEST_DURATION;
@@ -111,12 +111,12 @@ export function estimateTestDuration(
  * Uses timing data when available, falls back to estimation
  *
  * @param tests - List of discovered tests
- * @param timingData - Existing timing data (v2)
+ * @param timingData - Existing timing data
  * @returns Array of tests with their durations and estimation flag
  */
 export function getTestDurations(
   tests: DiscoveredTest[],
-  timingData: TimingDataV2 | null,
+  timingData: TimingData | null,
 ): Array<{
   testId: string;
   file: string;
@@ -147,11 +147,11 @@ export function getTestDurations(
 /**
  * Calculate average test duration from timing data
  *
- * @param timingData - Timing data (v2)
+ * @param timingData - Timing data
  * @returns Average duration in milliseconds, or DEFAULT_TEST_DURATION if no data
  */
 export function calculateAverageTestDuration(
-  timingData: TimingDataV2 | null,
+  timingData: TimingData | null,
 ): number {
   if (!timingData || Object.keys(timingData.tests).length === 0) {
     return DEFAULT_TEST_DURATION;
@@ -166,12 +166,12 @@ export function calculateAverageTestDuration(
  * Calculate average test duration for tests in a specific file
  *
  * @param file - File name
- * @param timingData - Timing data (v2)
+ * @param timingData - Timing data
  * @returns Average duration in milliseconds, or null if no tests found for file
  */
 export function calculateFileAverageTestDuration(
   file: string,
-  timingData: TimingDataV2 | null,
+  timingData: TimingData | null,
 ): number | null {
   if (!timingData) {
     return null;
