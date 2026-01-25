@@ -244,14 +244,23 @@ export default class OrchestratorReporter implements Reporter {
   /**
    * Build test ID from TestCase.
    * Uses shared buildTestIdFromRuntime function for consistency with fixture.
+   *
+   * CRITICAL: Must use project.testDir to match discovery-generated test IDs.
+   * No fallback to rootDir or process.cwd() - these cause path mismatch bugs.
    */
   private buildTestId(test: TestCase): string {
     const testDir = test.parent?.project()?.testDir;
-    const baseDir = testDir || this.rootDir || process.cwd();
+
+    if (!testDir) {
+      throw new Error(
+        '[Orchestrator Reporter] Could not determine project testDir. ' +
+          'Ensure your playwright.config.ts has projects configured with testDir.',
+      );
+    }
 
     return buildTestIdFromRuntime(test.location.file, test.titlePath(), {
       projectName: test.parent?.project()?.name,
-      baseDir,
+      baseDir: testDir,
     });
   }
 }

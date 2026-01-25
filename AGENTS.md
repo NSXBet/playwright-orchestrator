@@ -54,6 +54,16 @@ src/
 
 The orchestrator's correctness depends on ALL components generating **IDENTICAL test IDs** for the same test. Inconsistent IDs will cause tests to silently fail to match between shard assignment and runtime filtering.
 
+**Single source of truth for path resolution: `project.testDir`**
+
+ALL components MUST use `project.testDir` (not `config.rootDir`) for path resolution:
+- **Discovery**: Uses `project.testDir` from test-list.json config
+- **Fixture**: Uses `testInfo.project.testDir`
+- **Reporter**: Uses `test.parent.project().testDir`
+- **Timing extraction**: Uses `project.testDir` from report config
+
+**NEVER fall back to `process.cwd()` or `config.rootDir`** - this causes path mismatch bugs when `testDir` is a subdirectory (e.g., `testDir: './src/test/e2e'`).
+
 **Two contexts for test ID generation:**
 
 1. **Discovery context** (Playwright JSON output):
@@ -65,17 +75,23 @@ The orchestrator's correctness depends on ALL components generating **IDENTICAL 
    - Use `buildTestIdFromRuntime` from `src/core/test-id.ts`
    - Data comes from Playwright's runtime `testInfo.titlePath`
    - titlePath includes project name, filename, and file paths that must be filtered
+   - **baseDir is REQUIRED** - the function will throw if not provided
 
 **NEVER duplicate the filtering logic. ALWAYS use the shared functions from `src/core/test-id.ts`.**
 
 ```typescript
-// CORRECT - Use shared function
+// CORRECT - Use shared function with REQUIRED baseDir
 import { buildTestIdFromRuntime } from './core/test-id.js';
-const testId = buildTestIdFromRuntime(file, titlePath, { projectName, baseDir });
+const testId = buildTestIdFromRuntime(file, titlePath, { 
+  projectName, 
+  baseDir: testInfo.project.testDir  // REQUIRED - no fallback!
+});
 
-// WRONG - Duplicating filtering logic
-const filteredTitles = titlePath.filter((t) => t !== projectName && ...);
-const testId = [file, ...filteredTitles].join('::');
+// WRONG - Using process.cwd() or config.rootDir
+const testId = buildTestIdFromRuntime(file, titlePath, { 
+  projectName, 
+  baseDir: process.cwd()  // DON'T DO THIS - causes path mismatch!
+});
 ```
 
 ### No Flaky Assumptions
@@ -86,11 +102,15 @@ Bad examples (DO NOT DO):
 - "Strip `apps/` or `packages/` prefix for monorepos"
 - "Assume testDir is always `e2e/`"
 - "File paths starting with `src/` should be normalized"
+- "Fall back to `process.cwd()` if testDir is not available"
+- "Use `config.rootDir` instead of `project.testDir`"
 
 **All path handling must be deterministic**, based solely on:
-- Playwright's `config.rootDir` or `project.testDir`
+- Playwright's `project.testDir` (NOT `config.rootDir`)
 - Actual file paths from `testInfo.file` or JSON output
 - Standard Node.js `path.relative()` behavior
+
+**Strict validation**: If `project.testDir` is not available, the orchestrator MUST throw a clear error message guiding the user to fix their configuration, rather than silently falling back to potentially incorrect paths.
 
 ## Architecture Deep Dive
 

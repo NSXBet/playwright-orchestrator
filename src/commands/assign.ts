@@ -144,7 +144,7 @@ export default class Assign extends Command {
     if (flags['test-list']) {
       // Use pre-generated test list file (most reliable in CI)
       const testListPath = path.resolve(flags['test-list']);
-      tests = loadTestListFromFile(testListPath);
+      tests = loadTestListFromFile(testListPath, flags.project);
       if (flags.verbose) {
         this.log(`Using pre-generated test list from ${testListPath}`);
       }

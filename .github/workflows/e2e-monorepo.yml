@@ -88,6 +88,13 @@ jobs:
           echo "use-orchestrator: ${{ steps.orchestrate.outputs.use-orchestrator }}"
           echo "total-tests: ${{ steps.orchestrate.outputs.total-tests }}"
 
+      - name: Upload test-list.json for validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-list-json
+          path: examples/monorepo/apps/web/test-list.json
+          retention-days: 1
+
   # Job 3: Run tests in parallel matrix using real actions
   e2e-tests:
     needs: [setup, orchestrate]
@@ -134,6 +141,80 @@ jobs:
             cat "${{ steps.shard.outputs.shard-file }}"
           fi
 
+      - name: Download test-list.json for validation
+        uses: actions/download-artifact@v4
+        with:
+          name: test-list-json
+          path: examples/monorepo/apps/web
+
+      # CRITICAL: Validate test ID consistency BEFORE running tests
+      # This catches the rootDir vs testDir mismatch bug
+      - name: Validate test ID consistency
+        working-directory: examples/monorepo/apps/web
+        run: |
+          echo "=== Validating Test ID Consistency ==="
+          echo ""
+          echo "This step checks that discovery and fixture generate IDENTICAL test IDs."
+          echo "If they differ, tests will silently fail to match and run incorrectly."
+          echo ""
+          
+          # Get paths from Playwright config via test-list.json
+          ROOT_DIR=$(cat test-list.json | jq -r '.config.rootDir // empty')
+          TEST_DIR=$(cat test-list.json | jq -r '.config.projects[0].testDir // empty')
+          
+          echo "From test-list.json:"
+          echo "  config.rootDir: $ROOT_DIR"
+          echo "  projects[0].testDir: $TEST_DIR"
+          echo ""
+          
+          if [ -z "$ROOT_DIR" ] || [ -z "$TEST_DIR" ]; then
+            echo "::error::Could not extract rootDir or testDir from test-list.json"
+            exit 1
+          fi
+          
+          # Check if testDir is a subdirectory of rootDir (the problematic case)
+          if [[ "$TEST_DIR" == "$ROOT_DIR"* ]] && [ "$TEST_DIR" != "$ROOT_DIR" ]; then
+            # testDir is a subdirectory - this is the bet-app scenario
+            RELATIVE_TEST_DIR="${TEST_DIR#$ROOT_DIR/}"
+            echo "⚠️  testDir is a subdirectory of rootDir!"
+            echo "  Relative path: $RELATIVE_TEST_DIR"
+            echo ""
+            
+            # Get a sample test ID from the shard file
+            SHARD_FILE="${{ steps.shard.outputs.shard-file }}"
+            if [ -f "$SHARD_FILE" ]; then
+              SAMPLE_ID=$(cat "$SHARD_FILE" | jq -r '.[0] // empty')
+              echo "Sample test ID from shard file (discovery):"
+              echo "  $SAMPLE_ID"
+              echo ""
+              
+              # Extract the file path from the test ID (before first ::)
+              FILE_PATH=$(echo "$SAMPLE_ID" | cut -d':' -f1)
+              echo "File path in test ID: $FILE_PATH"
+              
+              # Check if the file path starts with the relative testDir path
+              # If discovery uses rootDir, paths will be like: src/test/e2e/file.spec.ts
+              # If fixture uses testDir, paths will be like: file.spec.ts
+              if [[ "$FILE_PATH" == "$RELATIVE_TEST_DIR"* ]]; then
+                echo ""
+                echo "::error::BUG DETECTED! Test IDs have inconsistent paths!"
+                echo "::error::Discovery generated: $FILE_PATH (relative to rootDir)"
+                echo "::error::Fixture would generate: ${FILE_PATH#$RELATIVE_TEST_DIR/} (relative to testDir)"
+                echo "::error::These don't match, causing tests to skip incorrectly!"
+                echo ""
+                echo "This is the rootDir vs testDir mismatch bug."
+                echo "Discovery uses config.rootDir but fixture uses project.testDir."
+                exit 1
+              else
+                echo "✓ Test IDs appear to be relative to testDir correctly"
+              fi
+            else
+              echo "No shard file to validate"
+            fi
+          else
+            echo "✓ testDir equals rootDir - no path mismatch possible"
+          fi
+
       - name: Run Playwright tests
         id: playwright
         working-directory: examples/monorepo/apps/web
@@ -164,25 +245,33 @@ jobs:
           PASSED_COUNT="${{ steps.playwright.outputs.playwright-passed }}"
           echo "Playwright reported passed: $PASSED_COUNT"
           
-          # CRITICAL ASSERTION: If all tests ran (no filtering), FAIL
-          # Total tests in project is ~49, each shard should run ~24-25
-          TOTAL_IN_PROJECT=49
-          MAX_ALLOWED=$((TOTAL_IN_PROJECT / 2 + 5))  # Allow some margin (29)
+          # STRICT VALIDATION: Passed count should match expected count exactly
+          # Allow small margin for skipped tests within the shard (e.g., test.skip())
+          TOLERANCE=3
+          DIFF=$((PASSED_COUNT - EXPECTED_COUNT))
+          ABS_DIFF=${DIFF#-}  # Absolute value
           
-          if [ "$PASSED_COUNT" -gt "$MAX_ALLOWED" ]; then
-            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard ran $PASSED_COUNT tests, but max allowed is $MAX_ALLOWED (total in project: $TOTAL_IN_PROJECT)"
-            echo "::error::This means test filtering is NOT working - all tests are running in each shard!"
+          if [ "$ABS_DIFF" -gt "$TOLERANCE" ]; then
+            echo "::error::TEST COUNT MISMATCH!"
+            echo "::error::Expected: $EXPECTED_COUNT tests (from shard assignment)"
+            echo "::error::Actual: $PASSED_COUNT tests passed"
+            echo "::error::Difference: $DIFF (tolerance: $TOLERANCE)"
+            echo ""
+            echo "This indicates one of:"
+            echo "  1. Test ID mismatch between discovery and fixture (rootDir vs testDir bug)"
+            echo "  2. Shard file not being loaded correctly"
+            echo "  3. Tests being filtered incorrectly"
             exit 1
           fi
           
           # CRITICAL ASSERTION: Shard should run at least some tests
-          if [ "$PASSED_COUNT" -lt 10 ]; then
-            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard only ran $PASSED_COUNT tests, expected at least 10"
+          if [ "$PASSED_COUNT" -lt 5 ]; then
+            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard only ran $PASSED_COUNT tests, expected at least 5"
             echo "::error::This means orchestrator may be filtering TOO aggressively or test IDs don't match"
             exit 1
           fi
           
-          echo "✓ Orchestrator filtering validated: $PASSED_COUNT tests executed (within expected range)"
+          echo "✓ Orchestrator filtering validated: $PASSED_COUNT tests executed (expected: $EXPECTED_COUNT, within tolerance: $TOLERANCE)"
 
       # Use the REAL extract-timing action
       - name: Extract timing

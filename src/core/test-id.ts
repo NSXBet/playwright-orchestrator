@@ -76,15 +76,22 @@ export function filterRuntimeTitlePath(
 export interface BuildTestIdFromRuntimeOptions {
   /** Playwright project name to exclude from titlePath */
   projectName?: string;
-  /** Base directory for relative path resolution (testDir or rootDir) */
-  baseDir?: string;
+  /**
+   * Base directory for relative path resolution.
+   * REQUIRED: Must be testInfo.project.testDir from Playwright.
+   * No fallback to process.cwd() - this caused the rootDir vs testDir bug.
+   */
+  baseDir: string;
 }
 
 /**
  * Build a test ID from Playwright runtime data (fixture or reporter context).
  *
+ * CRITICAL: The baseDir MUST be the project's testDir (testInfo.project.testDir).
+ * This ensures test IDs match between discovery and runtime filtering.
+ *
  * This function:
- * 1. Converts the absolute file path to relative (using baseDir or cwd)
+ * 1. Converts the absolute file path to relative (using baseDir)
  * 2. Filters the titlePath to remove project name, filename, and file paths
  * 3. Joins file and filtered titles with "::"
  *
@@ -92,25 +99,34 @@ export interface BuildTestIdFromRuntimeOptions {
  *
  * @param filePath - Absolute path to the test file (testInfo.file or test.location.file)
  * @param titlePath - Raw titlePath from testInfo.titlePath or test.titlePath()
- * @param options - Options for path resolution and filtering
+ * @param options - Options for path resolution and filtering (baseDir is REQUIRED)
  * @returns Test ID string
+ * @throws Error if baseDir is not provided
  *
  * @example
  * ```typescript
  * const testId = buildTestIdFromRuntime(
- *   '/project/e2e/login.spec.ts',
+ *   '/project/src/test/e2e/login.spec.ts',
  *   ['chromium', 'login.spec.ts', 'Login', 'should work'],
- *   { projectName: 'chromium', baseDir: '/project' }
+ *   { projectName: 'chromium', baseDir: '/project/src/test/e2e' }
  * );
- * // Result: 'e2e/login.spec.ts::Login::should work'
+ * // Result: 'login.spec.ts::Login::should work'
  * ```
  */
 export function buildTestIdFromRuntime(
   filePath: string,
   titlePath: string[],
-  options: BuildTestIdFromRuntimeOptions = {},
+  options?: BuildTestIdFromRuntimeOptions,
 ): string {
-  const { projectName, baseDir = process.cwd() } = options;
+  if (!options?.baseDir) {
+    throw new Error(
+      '[Orchestrator] baseDir is required for test ID generation. ' +
+        'Use testInfo.project.testDir from Playwright. ' +
+        'Do NOT use process.cwd() as it causes path mismatch bugs.',
+    );
+  }
+
+  const { projectName, baseDir } = options;
 
   // Convert absolute path to relative
   const file = path.relative(baseDir, filePath).replace(/\\/g, '/');

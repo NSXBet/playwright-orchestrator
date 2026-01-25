@@ -89,10 +89,20 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
     const allowedTestIds = loadShardFile();
 
     if (allowedTestIds) {
-      // Use project.testDir for consistent path resolution with test-discovery
+      // CRITICAL: Use project.testDir for consistent path resolution with test-discovery
+      // No fallback to process.cwd() - this causes path mismatch bugs
+      const testDir = testInfo.project.testDir;
+
+      if (!testDir) {
+        throw new Error(
+          '[Orchestrator Fixture] Could not determine project testDir. ' +
+            'Ensure your playwright.config.ts has projects configured with testDir.',
+        );
+      }
+
       const testId = buildTestIdFromRuntime(testInfo.file, testInfo.titlePath, {
         projectName: testInfo.project.name,
-        baseDir: testInfo.project.testDir,
+        baseDir: testDir,
       });
 
       const isAllowed = allowedTestIds.has(testId);
@@ -117,11 +127,12 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
  *
  * @param testInfo - The testInfo object from Playwright
  * @returns true if the test should run, false if it should be skipped
+ * @throws Error if project testDir is not configured
  */
 export function shouldRunTest(testInfo: {
   file: string;
   titlePath: string[];
-  project: { name: string; testDir?: string };
+  project: { name: string; testDir: string };
 }): boolean {
   const allowedTestIds = loadShardFile();
   if (!allowedTestIds) return true;

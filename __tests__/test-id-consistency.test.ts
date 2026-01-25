@@ -460,12 +460,14 @@ describe('Runtime Title Path Filtering', () => {
       expect(result).toBe('e2e/auth/login.spec.ts::Login::should work');
     });
 
-    test('uses cwd when baseDir not provided', () => {
-      // This test verifies the default behavior
-      const cwd = process.cwd();
-      const testFile = path.join(cwd, 'e2e/login.spec.ts');
-      const result = buildTestIdFromRuntime(testFile, ['Login', 'should work']);
-      expect(result).toBe('e2e/login.spec.ts::Login::should work');
+    test('throws error when baseDir not provided', () => {
+      // baseDir is now REQUIRED to prevent path mismatch bugs
+      // This is intentional - no fallback to process.cwd()
+      const testFile = '/project/e2e/login.spec.ts';
+      expect(() => {
+        // @ts-expect-error - Testing missing required parameter
+        buildTestIdFromRuntime(testFile, ['Login', 'should work']);
+      }).toThrow('[Orchestrator] baseDir is required');
     });
 
     test('handles deeply nested paths', () => {

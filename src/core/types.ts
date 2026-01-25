@@ -139,6 +139,13 @@ export interface DiscoveredTest {
  */
 export interface PlaywrightReport {
   suites: PlaywrightSuite[];
+  config?: {
+    rootDir?: string;
+    projects?: Array<{
+      name: string;
+      testDir?: string;
+    }>;
+  };
 }
 
 export interface PlaywrightSuite {

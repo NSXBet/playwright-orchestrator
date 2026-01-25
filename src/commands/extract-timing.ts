@@ -40,6 +40,9 @@ export default class ExtractTiming extends Command {
     }),
   };
 
+  // Base directory for path resolution (set from report config)
+  private baseDir: string = '';
+
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtractTiming);
 
@@ -52,6 +55,14 @@ export default class ExtractTiming extends Command {
       report = JSON.parse(content) as PlaywrightReport;
     } catch {
       this.error(`Failed to read Playwright report: ${reportPath}`);
+    }
+
+    // Determine base directory from report config
+    // Use project.testDir if available, otherwise fall back to rootDir
+    this.baseDir = this.getBaseDirFromReport(report, flags.project);
+
+    if (flags.verbose) {
+      this.log(`Using base directory: ${this.baseDir}`);
     }
 
     // Extract test-level durations
@@ -151,9 +162,58 @@ export default class ExtractTiming extends Command {
 
   /**
    * Normalize file path to be relative and consistent
-   * Uses path relative to CWD for consistency with reporter and discovery
+   * Uses the base directory from report config for consistency with discovery
    */
   private normalizeFilePath(filePath: string): string {
-    return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
+    return path.relative(this.baseDir, filePath).replace(/\\/g, '/');
+  }
+
+  /**
+   * Extract base directory from Playwright report config.
+   *
+   * CRITICAL: This must match what discovery uses (project.testDir).
+   * NO FALLBACKS - if testDir is not available, fail loudly.
+   */
+  private getBaseDirFromReport(
+    report: PlaywrightReport,
+    projectName: string,
+  ): string {
+    const config = report.config;
+
+    if (!config) {
+      this.error(
+        '[Orchestrator] Report has no config section. ' +
+          'Ensure you are using Playwright JSON reporter with config output enabled.',
+      );
+    }
+
+    if (!config.projects || config.projects.length === 0) {
+      this.error(
+        '[Orchestrator] Report has no projects in config. ' +
+          'Ensure your playwright.config.ts has at least one project configured.',
+      );
+    }
+
+    // Find the matching project
+    const project =
+      config.projects.find((p) => p.name === projectName) || config.projects[0];
+
+    if (!project) {
+      const availableProjects = config.projects.map((p) => p.name).join(', ');
+      this.error(
+        `[Orchestrator] Project "${projectName}" not found in report config. ` +
+          `Available projects: ${availableProjects}`,
+      );
+    }
+
+    if (!project.testDir) {
+      this.error(
+        `[Orchestrator] Project "${project.name}" has no testDir in report config. ` +
+          'Ensure your playwright.config.ts project has testDir set. ' +
+          'Do NOT use rootDir as fallback - it causes path mismatch bugs.',
+      );
+    }
+
+    return project.testDir;
   }
 }
