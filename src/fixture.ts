@@ -55,7 +55,15 @@ function loadShardFile(): Set<string> | null {
 
     const testIds: string[] = parsed;
     cachedAllowedTestIds = new Set(testIds);
-    console.log(`[Orchestrator] Loaded ${testIds.length} tests for this shard`);
+    process.stderr.write(
+      `[Fixture] Loaded ${testIds.length} tests for this shard\n`,
+    );
+    // Also log first 3 test IDs for debugging
+    if (process.env.ORCHESTRATOR_DEBUG === '1') {
+      process.stderr.write(
+        `[Fixture] Sample IDs from shard file: ${testIds.slice(0, 3).join(' | ')}\n`,
+      );
+    }
     return cachedAllowedTestIds;
   } catch (error) {
     console.error('[Orchestrator] Failed to load shard file:', error);
@@ -113,15 +121,16 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
         testInfo.project.testDir,
       );
 
-      // Debug: Always log test ID matching for first few tests to help diagnose issues
+      const isAllowed = allowedTestIds.has(testId);
+
+      // Debug: Write to stderr for visibility in CI logs
       if (process.env.ORCHESTRATOR_DEBUG === '1') {
-        const isAllowed = allowedTestIds.has(testId);
-        console.log(
-          `[Orchestrator] testDir=${testInfo.project.testDir}, file=${testInfo.file}, testId=${testId}, allowed=${isAllowed}`,
+        process.stderr.write(
+          `[Fixture] testDir=${testInfo.project.testDir} | testId=${testId} | allowed=${isAllowed}\n`,
         );
       }
 
-      if (!allowedTestIds.has(testId)) {
+      if (!isAllowed) {
         test.skip(true, 'Not in shard');
       }
     }
