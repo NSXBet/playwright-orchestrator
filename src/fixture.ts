@@ -113,8 +113,13 @@ function buildTestId(
 export function setupOrchestratorFilter<T extends object, W extends object>(
   test: TestType<T, W>,
 ): void {
+  process.stderr.write('[Fixture] setupOrchestratorFilter called\n');
+
   // biome-ignore lint/correctness/noEmptyPattern: Playwright requires empty destructuring for fixtures
   test.beforeEach(async ({}, testInfo) => {
+    process.stderr.write(
+      `[Fixture] beforeEach running for: ${testInfo.title}\n`,
+    );
     const allowedTestIds = loadShardFile();
 
     if (allowedTestIds) {
