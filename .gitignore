@@ -38,3 +38,4 @@ shard-timing-*.json
 # Logs
 *.log
 npm-debug.log*
+.npmrc.verdaccio
