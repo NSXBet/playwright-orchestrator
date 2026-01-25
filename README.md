@@ -87,6 +87,23 @@ export default defineConfig({
 
 The reporter reads `ORCHESTRATOR_SHARD_FILE` env var to filter tests for the current shard.
 
+## Local Testing
+
+Reproduce CI shard behavior locally:
+
+```bash
+# 1. Generate test list (same as CI does)
+npx playwright test --list --reporter=json --project="Mobile Chrome" > test-list.json
+
+# 2. Get shard distribution and extract shard 1 (requires jq)
+playwright-orchestrator assign --test-list test-list.json --shards 4 | jq '.shards."1"' > shard.json
+
+# 3. Run tests for that shard
+ORCHESTRATOR_SHARD_FILE=shard.json npx playwright test --project="Mobile Chrome"
+```
+
+This is useful for debugging why a specific test runs (or doesn't run) in a particular shard.
+
 ## GitHub Actions (External Repositories)
 
 Use the orchestrator in your own repository. The recommended pattern runs orchestration **once** before matrix jobs:

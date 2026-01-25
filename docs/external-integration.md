@@ -205,6 +205,49 @@ export default defineConfig({
 
 The reporter is included in the package - no need to copy any files.
 
+## Local Development
+
+Reproduce CI shard behavior locally to debug test distribution:
+
+```bash
+# 1. Generate test list (same command CI uses)
+npx playwright test --list --reporter=json --project="Mobile Chrome" > test-list.json
+
+# 2. Get shard distribution
+playwright-orchestrator assign --test-list test-list.json --shards 4
+
+# 3. Extract a specific shard's tests (requires jq)
+playwright-orchestrator assign --test-list test-list.json --shards 4 | jq '.shards."1"' > shard.json
+
+# 4. Run tests for that shard
+ORCHESTRATOR_SHARD_FILE=shard.json npx playwright test --project="Mobile Chrome"
+```
+
+### Verify Reporter is Working
+
+Enable debug logging to see which tests are filtered:
+
+```bash
+ORCHESTRATOR_DEBUG=1 ORCHESTRATOR_SHARD_FILE=shard.json npx playwright test
+```
+
+You should see output like:
+```
+[Orchestrator] 25 tests for this shard
+[Skip] e2e/other.spec.ts::Other::should work
+```
+
+### Troubleshooting
+
+**Tests not being filtered:**
+- Verify `ORCHESTRATOR_SHARD_FILE` points to a valid JSON array of test IDs
+- Check test IDs match format: `{file}::{describe}::{test-title}`
+- Enable debug logging with `ORCHESTRATOR_DEBUG=1`
+
+**All tests skipped:**
+- Verify test IDs in shard.json match your actual tests
+- Run `playwright-orchestrator assign` with `--verbose` to see discovered test IDs
+
 ## Action Reference
 
 ### setup-orchestrator
