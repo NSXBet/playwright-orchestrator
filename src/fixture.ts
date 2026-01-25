@@ -41,11 +41,21 @@ function loadShardFile(): Set<string> | null {
   }
 
   try {
-    const testIds = JSON.parse(fs.readFileSync(shardFile, 'utf-8'));
+    const parsed = JSON.parse(fs.readFileSync(shardFile, 'utf-8'));
+
+    // Validate shard file format
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every((id) => typeof id === 'string')
+    ) {
+      throw new Error(
+        '[Orchestrator] Shard file must be a JSON array of strings',
+      );
+    }
+
+    const testIds: string[] = parsed;
     cachedAllowedTestIds = new Set(testIds);
-    console.log(
-      `[Orchestrator] Loaded ${cachedAllowedTestIds.size} tests for this shard`,
-    );
+    console.log(`[Orchestrator] Loaded ${testIds.length} tests for this shard`);
     return cachedAllowedTestIds;
   } catch (error) {
     console.error('[Orchestrator] Failed to load shard file:', error);

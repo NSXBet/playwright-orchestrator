@@ -11,7 +11,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   reporter: [
     ["@nsxbet/playwright-orchestrator/reporter"],
-    ["html"],
+    ["json", { outputFile: "results.json" }],
   ],
 });
 ```
@@ -21,6 +21,41 @@ export default defineConfig({
 echo '["e2e/login.spec.ts::Login::should login"]' > shard.json
 ORCHESTRATOR_SHARD_FILE=shard.json npx playwright test
 ```
+
+## Reporter Output
+
+The orchestrator reporter provides clean, list-style output showing only tests assigned to the current shard:
+
+**Default output:**
+```
+Running 25 tests using 2 workers
+
+  ✓ login.spec.ts > Login > should login (150ms)
+  ✓ login.spec.ts > Login > should logout (120ms)
+  ✓ home.spec.ts > Home > should render (200ms)
+  ...
+
+  25 passed (30.5s)
+```
+
+**With `ORCHESTRATOR_DEBUG=1`:**
+```
+Running 25 tests using 2 workers (24 filtered by orchestrator)
+
+  ○ other.spec.ts > Other > filtered test
+  ✓ login.spec.ts > Login > should login (150ms)
+  ○ another.spec.ts > Another > filtered test
+  ✓ home.spec.ts > Home > should render (200ms)
+  ...
+
+  25 passed (30.5s)
+```
+
+**Key features:**
+- "Running X tests" shows only shard tests (not total)
+- Filtered tests are hidden by default (no noise)
+- Debug mode shows filtered tests with `○` marker
+- Summary shows only shard test counts
 
 ## Why This Approach
 
@@ -54,17 +89,23 @@ Orchestrator → JSON file → Reporter → Playwright
 
 ## Reporter Implementation
 
-The reporter is included in the package and can be imported directly:
+The reporter is included in the package and provides list-style output:
 
 ```typescript
 // playwright.config.ts
-reporter: [["@nsxbet/playwright-orchestrator/reporter"], ["html"]]
+reporter: [
+  ["@nsxbet/playwright-orchestrator/reporter"],
+  ["json", { outputFile: "results.json" }],
+]
 ```
 
 The reporter:
 1. Reads test IDs from JSON file via `ORCHESTRATOR_SHARD_FILE` env var
 2. Uses `Set.has()` for exact matching (no substring collisions)
-3. Skips tests not in the set via `test.annotations.push({ type: "skip" })`
+3. Prints clean output showing only shard tests
+4. Provides accurate test counts ("Running X tests" = shard tests only)
+
+**Note:** The orchestrator reporter replaces the need for Playwright's `list` reporter. Do not use both together as it will produce duplicate output.
 
 See [src/reporter.ts](../src/reporter.ts) for the full implementation.
 
@@ -75,12 +116,18 @@ See [src/reporter.ts](../src/reporter.ts) for the full implementation.
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  reporter: [
-    ["@nsxbet/playwright-orchestrator/reporter"],
-    ["html"],
-  ],
+  reporter: process.env.CI
+    ? [
+        ["@nsxbet/playwright-orchestrator/reporter"],
+        ["json", { outputFile: "results.json" }],
+      ]
+    : [["list"]],  // Use standard list reporter for local dev
 });
 ```
+
+**Environment Variables:**
+- `ORCHESTRATOR_SHARD_FILE`: Path to JSON file with test IDs for this shard
+- `ORCHESTRATOR_DEBUG`: Set to "1" to show filtered tests in output
 
 ## GitHub Actions Workflow
 

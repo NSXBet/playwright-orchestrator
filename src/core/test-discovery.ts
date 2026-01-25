@@ -145,23 +145,27 @@ function extractTestsFromSuite(
 }
 
 /**
- * Resolve file path to be relative to CWD
+ * Resolve file path to be relative to rootDir (Playwright's testDir/config dir)
  *
  * Playwright JSON output may contain:
  * - Just filename (relative to rootDir): "account.spec.ts"
  * - Full absolute path: "/Users/.../src/test/e2e/account.spec.ts"
  *
- * We need to return path relative to CWD for consistency with reporter.
+ * We return paths relative to rootDir for consistency.
+ * This ensures test IDs match between:
+ * - Orchestrator (running from repo root, reading test-list.json)
+ * - Fixture (running from subdirectory where tests live)
+ *
+ * Both will generate paths like "src/test/e2e/login.spec.ts" regardless of CWD.
  */
 function resolveFilePath(filePath: string, rootDir: string): string {
-  // If it's already an absolute path, make it relative to CWD
+  // If it's already an absolute path, make it relative to rootDir
   if (path.isAbsolute(filePath)) {
-    return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
+    return path.relative(rootDir, filePath).replace(/\\/g, '/');
   }
 
-  // If it's just a filename, resolve it from rootDir then make relative to CWD
-  const absolutePath = path.resolve(rootDir, filePath);
-  return path.relative(process.cwd(), absolutePath).replace(/\\/g, '/');
+  // If it's a relative path already (relative to rootDir), just normalize it
+  return filePath.replace(/\\/g, '/');
 }
 
 /**

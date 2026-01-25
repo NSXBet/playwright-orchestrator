@@ -1,4 +1,4 @@
-.PHONY: install lint lint-fix format typecheck test build clean act-test act-e2e example-install assign-demo help
+.PHONY: install lint lint-fix format typecheck test build clean act-test act-publish act-e2e act-e2e-monorepo example-install assign-demo help
 
 # Default target
 help:
@@ -14,9 +14,13 @@ help:
 	@echo "  build        - Build the project"
 	@echo "  clean        - Remove build artifacts"
 	@echo ""
-	@echo "Local Testing:"
-	@echo "  act-test     - Run CI workflow locally with Act"
-	@echo "  act-e2e      - Run E2E example workflow locally with Act"
+	@echo "Local Testing (via Act):"
+	@echo "  act-test     - Run CI workflow locally (lint, test, build)"
+	@echo "  act-publish  - Run publish test locally (Verdaccio)"
+	@echo "  act-e2e      - Run E2E example workflow locally"
+	@echo "  act-e2e-monorepo - Run E2E monorepo workflow locally"
+	@echo ""
+	@echo "Examples:"
 	@echo "  example-install - Install example project dependencies"
 	@echo "  assign-demo  - Demo assign command with example tests"
 
@@ -70,3 +74,17 @@ act-e2e:
 	@echo "=== Running E2E example workflow locally with Act ==="
 	act workflow_dispatch -W .github/workflows/e2e-example.yml --rm
 	@echo "=== E2E workflow complete ==="
+
+# Run E2E monorepo workflow locally with Act
+# Tests the monorepo path mismatch scenario
+act-e2e-monorepo:
+	@echo "=== Running E2E monorepo workflow with Act ==="
+	act workflow_dispatch -W .github/workflows/e2e-monorepo.yml --rm
+	@echo "=== E2E monorepo workflow complete ==="
+
+# Run publish test locally with Act
+# Tests that the package can be published and installed correctly
+act-publish:
+	@echo "=== Running publish test with Act ==="
+	act -j test-publish --rm
+	@echo "=== Publish test complete ==="

@@ -48,3 +48,44 @@ jobs:
 
       - name: Build
         run: bun run build
+
+  test-publish:
+    name: Test Publish
+    runs-on: ubuntu-24.04
+    needs: [build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build
+        run: bun run build
+
+      - name: Start Verdaccio
+        run: |
+          npm install -g verdaccio
+          mkdir -p verdaccio/storage
+          verdaccio --config verdaccio/config.yaml &
+          sleep 5
+          
+          # Setup npm to use Verdaccio with basic auth
+          AUTH_TOKEN=$(echo -n 'test:test' | base64)
+          echo "registry=http://localhost:4873/" > ~/.npmrc
+          echo "//localhost:4873/:_auth=$AUTH_TOKEN" >> ~/.npmrc
+          echo "//localhost:4873/:always-auth=true" >> ~/.npmrc
+
+      - name: Publish to Verdaccio
+        run: |
+          npm pkg set version=0.0.0-test.${{ github.run_id }}
+          npm pkg delete publishConfig
+          npm publish --registry http://localhost:4873
+          git checkout package.json
+
+      - name: Verify install from Verdaccio
+        run: |
+          mkdir -p /tmp/test-install && cd /tmp/test-install
+          npm init -y
+          npm install @nsxbet/playwright-orchestrator@0.0.0-test.${{ github.run_id }} --registry http://localhost:4873
+          npx playwright-orchestrator --version

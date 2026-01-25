@@ -1,0 +1,271 @@
+name: E2E Monorepo Test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "examples/monorepo/**"
+      - ".github/workflows/e2e-monorepo.yml"
+      - ".github/actions/**"
+
+env:
+  TEST_VERSION: 0.0.0-test.1
+
+jobs:
+  # Job 1: Build and create tarball for other jobs
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup mise
+        uses: jdx/mise-action@v2
+        with:
+          experimental: true
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build package
+        run: bun run build
+
+      - name: Create tarball
+        run: npm pack
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-tarball
+          path: "*.tgz"
+          retention-days: 1
+
+  # Job 2: Orchestrate tests using the real action
+  orchestrate:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    outputs:
+      shard-files: ${{ steps.orchestrate.outputs.shard-files }}
+      use-orchestrator: ${{ steps.orchestrate.outputs.use-orchestrator }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-tarball
+
+      - name: Install CLI globally from tarball
+        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+
+      - name: Install monorepo dependencies
+        working-directory: examples/monorepo/apps/web
+        run: |
+          # Copy tarball and install as dev dependency for fixture
+          cp $GITHUB_WORKSPACE/nsxbet-playwright-orchestrator-*.tgz .
+          npm install ./nsxbet-playwright-orchestrator-*.tgz
+          npm install
+          npx playwright install chromium
+
+      - name: Generate test list
+        working-directory: examples/monorepo/apps/web
+        run: |
+          npx playwright test --list --reporter=json > test-list.json
+          echo "=== Test list generated ==="
+          cat test-list.json | jq -r '.suites[].title' || echo "Could not parse suites"
+
+      # Use the REAL orchestrate action
+      - name: Orchestrate tests
+        id: orchestrate
+        uses: ./.github/actions/orchestrate
+        with:
+          test-list: examples/monorepo/apps/web/test-list.json
+          shards: 2
+          level: test
+
+      - name: Debug orchestrate output
+        run: |
+          echo "shard-files: ${{ steps.orchestrate.outputs.shard-files }}"
+          echo "use-orchestrator: ${{ steps.orchestrate.outputs.use-orchestrator }}"
+          echo "total-tests: ${{ steps.orchestrate.outputs.total-tests }}"
+
+  # Job 3: Run tests in parallel matrix using real actions
+  e2e-tests:
+    needs: [setup, orchestrate]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-tarball
+
+      - name: Install CLI globally from tarball
+        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+
+      - name: Install monorepo dependencies
+        working-directory: examples/monorepo/apps/web
+        run: |
+          # Copy tarball and install as dev dependency for fixture
+          cp $GITHUB_WORKSPACE/nsxbet-playwright-orchestrator-*.tgz .
+          npm install ./nsxbet-playwright-orchestrator-*.tgz
+          npm install
+          npx playwright install chromium
+
+      # Use the REAL get-shard action
+      - name: Get shard assignment
+        id: shard
+        uses: ./.github/actions/get-shard
+        with:
+          shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+          shard-index: ${{ matrix.shardIndex }}
+          shards: 2
+
+      - name: Debug shard info
+        run: |
+          echo "shard-file: ${{ steps.shard.outputs.shard-file }}"
+          echo "has-tests: ${{ steps.shard.outputs.has-tests }}"
+          echo "test-count: ${{ steps.shard.outputs.test-count }}"
+          if [ -n "${{ steps.shard.outputs.shard-file }}" ] && [ -f "${{ steps.shard.outputs.shard-file }}" ]; then
+            echo "=== Shard file contents ==="
+            cat "${{ steps.shard.outputs.shard-file }}"
+          fi
+
+      - name: Run Playwright tests
+        working-directory: examples/monorepo/apps/web
+        env:
+          ORCHESTRATOR_SHARD_FILE: ${{ steps.shard.outputs.shard-file }}
+          ORCHESTRATOR_DEBUG: "1"
+          CI: "true"
+        run: |
+          echo "=== Running tests for shard ${{ matrix.shardIndex }} ==="
+          # Don't override reporter - let playwright.config.ts handle it
+          # Config outputs JSON to test-results/results.json when CI=true
+          npx playwright test 2>&1 | tee /tmp/output.txt || true
+
+      - name: Validate orchestrator filtering
+        working-directory: examples/monorepo/apps/web
+        run: |
+          # This step MUST FAIL if orchestrator is not filtering correctly
+          echo "=== Validating orchestrator filtering ==="
+          
+          # Get expected test count from shard assignment
+          EXPECTED_COUNT="${{ steps.shard.outputs.test-count }}"
+          echo "Expected tests for this shard: $EXPECTED_COUNT"
+          
+          # Parse JSON report to count actual executed tests
+          if [ ! -f test-results/results.json ]; then
+            echo "::error::JSON report not found - cannot validate"
+            exit 1
+          fi
+          
+          # Count tests that were NOT skipped (actually ran)
+          ACTUAL_PASSED=$(jq '[.suites[].suites[]?.specs[]?.tests[]? | select(.status == "expected")] | length' test-results/results.json 2>/dev/null || echo "0")
+          ACTUAL_SKIPPED=$(jq '[.suites[].suites[]?.specs[]?.tests[]? | select(.status == "skipped")] | length' test-results/results.json 2>/dev/null || echo "0")
+          
+          # Also count from flat structure
+          FLAT_PASSED=$(jq '[.suites[].specs[]?.tests[]? | select(.status == "expected")] | length' test-results/results.json 2>/dev/null || echo "0")
+          FLAT_SKIPPED=$(jq '[.suites[].specs[]?.tests[]? | select(.status == "skipped")] | length' test-results/results.json 2>/dev/null || echo "0")
+          
+          # Sum both structures
+          TOTAL_PASSED=$((ACTUAL_PASSED + FLAT_PASSED))
+          TOTAL_SKIPPED=$((ACTUAL_SKIPPED + FLAT_SKIPPED))
+          
+          echo "Passed tests: $TOTAL_PASSED"
+          echo "Skipped tests: $TOTAL_SKIPPED"
+          
+          # CRITICAL ASSERTION: If all tests ran (no filtering), FAIL
+          # Total tests in project is ~49, each shard should run ~24-25
+          TOTAL_IN_PROJECT=49
+          MAX_ALLOWED=$((TOTAL_IN_PROJECT / 2 + 5))  # Allow some margin (29)
+          
+          if [ "$TOTAL_PASSED" -gt "$MAX_ALLOWED" ]; then
+            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard ran $TOTAL_PASSED tests, but max allowed is $MAX_ALLOWED (total in project: $TOTAL_IN_PROJECT)"
+            echo "::error::This means test filtering is NOT working - all tests are running in each shard!"
+            exit 1
+          fi
+          
+          # CRITICAL ASSERTION: Shard should run at least some tests
+          if [ "$TOTAL_PASSED" -lt 10 ]; then
+            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard only ran $TOTAL_PASSED tests, expected at least 10"
+            echo "::error::This means orchestrator may be filtering TOO aggressively or test IDs don't match"
+            exit 1
+          fi
+          
+          echo "✓ Orchestrator filtering validated: $TOTAL_PASSED tests executed (within expected range)"
+
+      # Use the REAL extract-timing action
+      - name: Extract timing
+        if: success() || failure()
+        uses: ./.github/actions/extract-timing
+        with:
+          report-file: examples/monorepo/apps/web/test-results/results.json
+          output-file: timing-shard-${{ matrix.shardIndex }}.json
+          shard: ${{ matrix.shardIndex }}
+
+      - name: Upload timing artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timing-shard-${{ matrix.shardIndex }}
+          path: timing-shard-${{ matrix.shardIndex }}.json
+          if-no-files-found: ignore
+
+  # Job 4: Merge timing data using the real action
+  merge:
+    needs: [setup, e2e-tests]
+    if: success() || failure()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-tarball
+
+      - name: Install CLI globally from tarball
+        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+
+      - name: Download timing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: timing-shard-*
+          merge-multiple: true
+
+      - name: List timing files
+        run: ls -la timing-shard-*.json 2>/dev/null || echo "No timing files found"
+
+      # Use the REAL merge-timing action
+      - name: Merge timing
+        uses: ./.github/actions/merge-timing
+        with:
+          new-files: "timing-shard-*.json"
+          output-file: playwright-timing.json
+
+      - name: Verify merged timing
+        run: |
+          if [ -f playwright-timing.json ]; then
+            echo "=== Merged timing data ==="
+            cat playwright-timing.json | jq '.' | head -100
+            
+            TEST_COUNT=$(cat playwright-timing.json | jq '.tests | length' 2>/dev/null || echo "0")
+            echo ""
+            echo "Total tests with timing: $TEST_COUNT"
+            
+            # CRITICAL ASSERTION: All shards combined should have timing for most tests
+            # We expect ~49 tests total, timing should capture at least 40
+            MIN_EXPECTED_TIMING=40
+            if [ "$TEST_COUNT" -lt "$MIN_EXPECTED_TIMING" ]; then
+              echo "::error::TIMING MERGE FAILED! Only $TEST_COUNT tests have timing, expected at least $MIN_EXPECTED_TIMING"
+              echo "::error::This suggests some shards didn't report timing correctly"
+              exit 1
+            fi
+            
+            echo "✓ Timing merge validated: $TEST_COUNT tests have timing data"
+          else
+            echo "::error::No merged timing file created"
+            exit 1
+          fi
