@@ -1,5 +1,17 @@
 # @nsxbet/playwright-orchestrator
 
+## 0.5.1
+
+### Patch Changes
+
+- [#20](https://github.com/NSXBet/playwright-orchestrator/pull/20) [`cb3f710`](https://github.com/NSXBet/playwright-orchestrator/commit/cb3f710e4ac606ca573ce83c083e209eddeb09cd) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Add CommonJS require exports for Playwright compatibility
+
+  Playwright uses CommonJS require() to load custom reporters. The package was ESM-only
+  with only `import` conditions in exports, causing "Package subpath './reporter' is not
+  defined by exports" errors when used as a reporter.
+
+  Added `require` conditions to both main and reporter exports for compatibility.
+
 ## 0.5.0
 
 ### Minor Changes
