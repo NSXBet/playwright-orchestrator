@@ -88,13 +88,18 @@ export default class OrchestratorReporter implements Reporter {
       .replace(/\\/g, '/');
     const fileName = path.basename(test.location.file);
 
-    // Filter titlePath to exclude project name and filename
+    // Filter titlePath to exclude project name, filename, and empty strings
     // titlePath typically starts with [projectName, fileName, ...describes, testTitle]
     const titlePath = test.titlePath();
+    const projectName = test.parent?.project()?.name;
     const filteredTitles = titlePath.filter((title) => {
-      // Skip if it's the project name (first element, usually matches project config)
+      // Skip empty strings
+      if (!title || title === '') return false;
+      // Skip if it's the project name
+      if (title === projectName) return false;
       // Skip if it matches the filename
-      return title !== fileName && title !== test.parent?.project()?.name;
+      if (title === fileName) return false;
+      return true;
     });
 
     return [file, ...filteredTitles].join('::');

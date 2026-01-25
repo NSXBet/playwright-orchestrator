@@ -15,6 +15,11 @@
       "types": "./dist/reporter.d.ts",
       "import": "./dist/reporter.js",
       "require": "./dist/reporter.js"
+    },
+    "./fixture": {
+      "types": "./dist/fixture.d.ts",
+      "import": "./dist/fixture.js",
+      "require": "./dist/fixture.js"
     }
   },
   "bin": {
