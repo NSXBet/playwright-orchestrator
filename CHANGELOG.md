@@ -1,5 +1,36 @@
 # @nsxbet/playwright-orchestrator
 
+## 0.6.0
+
+### Minor Changes
+
+- [#26](https://github.com/NSXBet/playwright-orchestrator/pull/26) [`f45c3c4`](https://github.com/NSXBet/playwright-orchestrator/commit/f45c3c45bf68a9ac5f8d3cbb44759ff83a095979) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Add fixture-based test filtering for proper test skipping
+
+  The reporter-based approach only added metadata but didn't actually skip tests.
+  This adds a new fixture module that uses `test.skip()` to properly skip tests
+  not in the current shard.
+
+  ### New Features
+
+  - **Fixture module** (`@nsxbet/playwright-orchestrator/fixture`):
+    - `setupOrchestratorFilter(test)` - Sets up beforeEach hook for automatic filtering
+    - `shouldRunTest(testInfo)` - Manual check if a test should run
+
+  ### Usage
+
+  ```typescript
+  // In your test utils or setup file
+  import { test } from "@playwright/test";
+  import { setupOrchestratorFilter } from "@nsxbet/playwright-orchestrator/fixture";
+
+  setupOrchestratorFilter(test);
+  ```
+
+  ### Bug Fixes
+
+  - Fixed reporter test ID generation to exclude project name and filename from titlePath
+  - Reporter now correctly builds test IDs matching the orchestrator format
+
 ## 0.5.3
 
 ### Patch Changes
