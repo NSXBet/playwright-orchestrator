@@ -1,5 +1,21 @@
 # @nsxbet/playwright-orchestrator
 
+## 0.6.3
+
+### Patch Changes
+
+- [#31](https://github.com/NSXBet/playwright-orchestrator/pull/31) [`dd56807`](https://github.com/NSXBet/playwright-orchestrator/commit/dd5680714517d6b75d5b588a51660e0aac9e1188) Thanks [@gtkatakura](https://github.com/gtkatakura)! - fix: resolve test ID path mismatch (rootDir vs testDir)
+
+  All components now consistently use `project.testDir` as the single source of truth for path resolution:
+
+  - `test-discovery.ts`: Uses `project.testDir` from JSON config (no fallback to `config.rootDir`)
+  - `fixture.ts`: Validates `testInfo.project.testDir` is defined
+  - `reporter.ts`: Requires `project.testDir` (no fallback chain)
+  - `extract-timing.ts`: Throws error if `testDir` not found in report
+  - `test-id.ts`: `baseDir` is now required (no `process.cwd()` fallback)
+
+  This prevents silent test ID mismatches in monorepo setups where `testDir` is a subdirectory of `rootDir`.
+
 ## 0.6.2
 
 ### Patch Changes
