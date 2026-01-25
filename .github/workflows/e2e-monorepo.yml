@@ -162,11 +162,12 @@ jobs:
             exit 1
           fi
           
-          # Count tests that were NOT skipped (actually ran)
+          # Count tests that actually ran (not skipped)
+          # Playwright JSON uses status: "expected" for passed tests, "skipped" for skipped
           ACTUAL_PASSED=$(jq '[.suites[].suites[]?.specs[]?.tests[]? | select(.status == "expected")] | length' test-results/results.json 2>/dev/null || echo "0")
           ACTUAL_SKIPPED=$(jq '[.suites[].suites[]?.specs[]?.tests[]? | select(.status == "skipped")] | length' test-results/results.json 2>/dev/null || echo "0")
           
-          # Also count from flat structure
+          # Also count from flat structure (tests outside describe blocks)
           FLAT_PASSED=$(jq '[.suites[].specs[]?.tests[]? | select(.status == "expected")] | length' test-results/results.json 2>/dev/null || echo "0")
           FLAT_SKIPPED=$(jq '[.suites[].specs[]?.tests[]? | select(.status == "skipped")] | length' test-results/results.json 2>/dev/null || echo "0")
           
