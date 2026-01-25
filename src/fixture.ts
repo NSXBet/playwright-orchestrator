@@ -71,11 +71,16 @@ function buildTestId(
   const file = path.relative(process.cwd(), filePath).replace(/\\/g, '/');
   const fileName = path.basename(filePath);
 
-  // Filter titlePath to exclude project name, filename, and empty strings
+  // Filter titlePath to exclude project name, filename, empty strings, and file paths
+  // This MUST match the filtering logic in reporter.ts and test-discovery.ts
   const filteredTitles = titlePath.filter((title) => {
     if (!title || title === '') return false;
     if (title === projectName) return false;
     if (title === fileName) return false;
+    // Filter out file paths (contain / or \ or end with .spec.ts/.test.ts)
+    if (title.includes('/') || title.includes('\\')) return false;
+    if (title.endsWith('.spec.ts') || title.endsWith('.test.ts')) return false;
+    if (title.endsWith('.spec.js') || title.endsWith('.test.js')) return false;
     return true;
   });
 
