@@ -111,12 +111,20 @@ function loadShardFile(): Set<string> | null {
  */
 export function withOrchestratorFilter<T extends object, W extends object>(
   test: TestType<T, W>,
-): TestType<T & { _orchestratorFilter: void }, W> {
-  return test.extend<{ _orchestratorFilter: void }>({
+): TestType<T & { _orchestratorFilter: undefined }, W> {
+  return test.extend<{ _orchestratorFilter: undefined }>({
     // @ts-expect-error - Playwright's auto fixture typing is complex
     _orchestratorFilter: [
-      // biome-ignore lint/correctness/noEmptyPattern: Playwright requires empty destructuring
-      async ({}, use: () => Promise<void>, testInfo: { file: string; titlePath: string[]; project: { name: string; testDir: string } }) => {
+      async (
+        // biome-ignore lint/correctness/noEmptyPattern: Playwright requires empty destructuring
+        {},
+        use: () => Promise<void>,
+        testInfo: {
+          file: string;
+          titlePath: string[];
+          project: { name: string; testDir: string };
+        },
+      ) => {
         const allowedTestIds = loadShardFile();
 
         if (allowedTestIds) {
