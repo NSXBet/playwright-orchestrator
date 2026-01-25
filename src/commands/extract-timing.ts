@@ -170,9 +170,9 @@ export default class ExtractTiming extends Command {
 
   /**
    * Extract base directory from Playwright report config.
-   * Prioritizes project.testDir, falls back to config.rootDir.
    *
    * CRITICAL: This must match what discovery uses (project.testDir).
+   * NO FALLBACKS - if testDir is not available, fail loudly.
    */
   private getBaseDirFromReport(
     report: PlaywrightReport,
@@ -180,33 +180,40 @@ export default class ExtractTiming extends Command {
   ): string {
     const config = report.config;
 
-    // Try to find testDir from project config
-    if (config?.projects) {
-      const project =
-        config.projects.find((p) => p.name === projectName) ||
-        config.projects[0];
-
-      if (project?.testDir) {
-        return project.testDir;
-      }
-    }
-
-    // Fall back to rootDir if available
-    if (config?.rootDir) {
-      this.warn(
-        `Project "${projectName}" has no testDir in report config. ` +
-          `Using rootDir: ${config.rootDir}. ` +
-          `This may cause test ID mismatches if testDir is configured in playwright.config.ts.`,
+    if (!config) {
+      this.error(
+        '[Orchestrator] Report has no config section. ' +
+          'Ensure you are using Playwright JSON reporter with config output enabled.',
       );
-      return config.rootDir;
     }
 
-    // Last resort: use current working directory
-    this.warn(
-      'Report has no config.rootDir or project.testDir. ' +
-        `Using current directory: ${process.cwd()}. ` +
-        'This may cause test ID mismatches.',
-    );
-    return process.cwd();
+    if (!config.projects || config.projects.length === 0) {
+      this.error(
+        '[Orchestrator] Report has no projects in config. ' +
+          'Ensure your playwright.config.ts has at least one project configured.',
+      );
+    }
+
+    // Find the matching project
+    const project =
+      config.projects.find((p) => p.name === projectName) || config.projects[0];
+
+    if (!project) {
+      const availableProjects = config.projects.map((p) => p.name).join(', ');
+      this.error(
+        `[Orchestrator] Project "${projectName}" not found in report config. ` +
+          `Available projects: ${availableProjects}`,
+      );
+    }
+
+    if (!project.testDir) {
+      this.error(
+        `[Orchestrator] Project "${project.name}" has no testDir in report config. ` +
+          'Ensure your playwright.config.ts project has testDir set. ' +
+          'Do NOT use rootDir as fallback - it causes path mismatch bugs.',
+      );
+    }
+
+    return project.testDir;
   }
 }
