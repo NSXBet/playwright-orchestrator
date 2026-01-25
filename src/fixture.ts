@@ -67,10 +67,11 @@ function buildTestId(
   filePath: string,
   titlePath: string[],
   projectName?: string,
-  rootDir?: string,
+  testDir?: string,
 ): string {
-  // Use rootDir from config if available, otherwise fall back to cwd
-  const baseDir = rootDir || process.cwd();
+  // Use testDir from project config if available, otherwise fall back to cwd
+  // This ensures paths match what test-discovery produces from Playwright's JSON output
+  const baseDir = testDir || process.cwd();
   const file = path.relative(baseDir, filePath).replace(/\\/g, '/');
   const fileName = path.basename(filePath);
 
@@ -104,12 +105,12 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
     const allowedTestIds = loadShardFile();
 
     if (allowedTestIds) {
-      // Use config.rootDir for consistent path resolution with test-discovery
+      // Use project.testDir for consistent path resolution with test-discovery
       const testId = buildTestId(
         testInfo.file,
         testInfo.titlePath,
         testInfo.project.name,
-        testInfo.config.rootDir,
+        testInfo.project.testDir,
       );
 
       if (!allowedTestIds.has(testId)) {
@@ -132,8 +133,7 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
 export function shouldRunTest(testInfo: {
   file: string;
   titlePath: string[];
-  project: { name: string };
-  config?: { rootDir?: string };
+  project: { name: string; testDir?: string };
 }): boolean {
   const allowedTestIds = loadShardFile();
   if (!allowedTestIds) return true;
@@ -142,7 +142,7 @@ export function shouldRunTest(testInfo: {
     testInfo.file,
     testInfo.titlePath,
     testInfo.project.name,
-    testInfo.config?.rootDir,
+    testInfo.project.testDir,
   );
 
   return allowedTestIds.has(testId);

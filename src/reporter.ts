@@ -253,8 +253,10 @@ export default class OrchestratorReporter implements Reporter {
    * Format: {relative-file}::{describe}::{test-title}
    */
   private buildTestId(test: TestCase): string {
-    // Use rootDir from config for consistent path resolution with test-discovery
-    const baseDir = this.rootDir || process.cwd();
+    // Use project's testDir for consistent path resolution with test-discovery
+    // This ensures paths match what the orchestrator assign command produces
+    const testDir = test.parent?.project()?.testDir;
+    const baseDir = testDir || this.rootDir || process.cwd();
     const file = path.relative(baseDir, test.location.file).replace(/\\/g, '/');
     const filteredTitles = this.getFilteredTitles(test);
     return [file, ...filteredTitles].join('::');
