@@ -135,6 +135,7 @@ jobs:
           fi
 
       - name: Run Playwright tests
+        id: playwright
         working-directory: examples/monorepo/apps/web
         env:
           ORCHESTRATOR_SHARD_FILE: ${{ steps.shard.outputs.shard-file }}
@@ -142,12 +143,15 @@ jobs:
           CI: "true"
         run: |
           echo "=== Running tests for shard ${{ matrix.shardIndex }} ==="
-          # Don't override reporter - let playwright.config.ts handle it
-          # Config outputs JSON to test-results/results.json when CI=true
-          npx playwright test 2>&1 | tee /tmp/output.txt || true
+          # Capture output for validation - Playwright outputs summary line like "22 passed, 2 skipped"
+          npx playwright test 2>&1 | tee /tmp/playwright-output.txt || true
+          
+          # Extract passed count from Playwright's summary line (most reliable source)
+          PASSED_COUNT=$(grep -oP '\d+(?= passed)' /tmp/playwright-output.txt | tail -1 || echo "0")
+          echo "playwright-passed=$PASSED_COUNT" >> $GITHUB_OUTPUT
+          echo "Extracted from Playwright summary: $PASSED_COUNT passed"
 
       - name: Validate orchestrator filtering
-        working-directory: examples/monorepo/apps/web
         run: |
           # This step MUST FAIL if orchestrator is not filtering correctly
           echo "=== Validating orchestrator filtering ==="
@@ -156,47 +160,29 @@ jobs:
           EXPECTED_COUNT="${{ steps.shard.outputs.test-count }}"
           echo "Expected tests for this shard: $EXPECTED_COUNT"
           
-          # Parse JSON report to count actual executed tests
-          if [ ! -f test-results/results.json ]; then
-            echo "::error::JSON report not found - cannot validate"
-            exit 1
-          fi
-          
-          # Count tests that actually ran (not skipped)
-          # Playwright JSON uses status: "expected" for passed tests, "skipped" for skipped
-          ACTUAL_PASSED=$(jq '[.suites[].suites[]?.specs[]?.tests[]? | select(.status == "expected")] | length' test-results/results.json 2>/dev/null || echo "0")
-          ACTUAL_SKIPPED=$(jq '[.suites[].suites[]?.specs[]?.tests[]? | select(.status == "skipped")] | length' test-results/results.json 2>/dev/null || echo "0")
-          
-          # Also count from flat structure (tests outside describe blocks)
-          FLAT_PASSED=$(jq '[.suites[].specs[]?.tests[]? | select(.status == "expected")] | length' test-results/results.json 2>/dev/null || echo "0")
-          FLAT_SKIPPED=$(jq '[.suites[].specs[]?.tests[]? | select(.status == "skipped")] | length' test-results/results.json 2>/dev/null || echo "0")
-          
-          # Sum both structures
-          TOTAL_PASSED=$((ACTUAL_PASSED + FLAT_PASSED))
-          TOTAL_SKIPPED=$((ACTUAL_SKIPPED + FLAT_SKIPPED))
-          
-          echo "Passed tests: $TOTAL_PASSED"
-          echo "Skipped tests: $TOTAL_SKIPPED"
+          # Use Playwright's own reported count (most reliable - avoids jq parsing issues)
+          PASSED_COUNT="${{ steps.playwright.outputs.playwright-passed }}"
+          echo "Playwright reported passed: $PASSED_COUNT"
           
           # CRITICAL ASSERTION: If all tests ran (no filtering), FAIL
           # Total tests in project is ~49, each shard should run ~24-25
           TOTAL_IN_PROJECT=49
           MAX_ALLOWED=$((TOTAL_IN_PROJECT / 2 + 5))  # Allow some margin (29)
           
-          if [ "$TOTAL_PASSED" -gt "$MAX_ALLOWED" ]; then
-            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard ran $TOTAL_PASSED tests, but max allowed is $MAX_ALLOWED (total in project: $TOTAL_IN_PROJECT)"
+          if [ "$PASSED_COUNT" -gt "$MAX_ALLOWED" ]; then
+            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard ran $PASSED_COUNT tests, but max allowed is $MAX_ALLOWED (total in project: $TOTAL_IN_PROJECT)"
             echo "::error::This means test filtering is NOT working - all tests are running in each shard!"
             exit 1
           fi
           
           # CRITICAL ASSERTION: Shard should run at least some tests
-          if [ "$TOTAL_PASSED" -lt 10 ]; then
-            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard only ran $TOTAL_PASSED tests, expected at least 10"
+          if [ "$PASSED_COUNT" -lt 10 ]; then
+            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard only ran $PASSED_COUNT tests, expected at least 10"
             echo "::error::This means orchestrator may be filtering TOO aggressively or test IDs don't match"
             exit 1
           fi
           
-          echo "✓ Orchestrator filtering validated: $TOTAL_PASSED tests executed (within expected range)"
+          echo "✓ Orchestrator filtering validated: $PASSED_COUNT tests executed (within expected range)"
 
       # Use the REAL extract-timing action
       - name: Extract timing
