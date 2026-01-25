@@ -20,8 +20,8 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { TestType } from '@playwright/test';
+import { buildTestIdFromRuntime } from './core/test-id.js';
 
 // Module initialization debug - only in debug mode
 if (process.env.ORCHESTRATOR_DEBUG === '1') {
@@ -75,34 +75,6 @@ function loadShardFile(): Set<string> | null {
   }
 }
 
-function buildTestId(
-  filePath: string,
-  titlePath: string[],
-  projectName?: string,
-  testDir?: string,
-): string {
-  // Use testDir from project config if available, otherwise fall back to cwd
-  // This ensures paths match what test-discovery produces from Playwright's JSON output
-  const baseDir = testDir || process.cwd();
-  const file = path.relative(baseDir, filePath).replace(/\\/g, '/');
-  const fileName = path.basename(filePath);
-
-  // Filter titlePath to exclude project name, filename, empty strings, and file paths
-  // This MUST match the filtering logic in reporter.ts and test-discovery.ts
-  const filteredTitles = titlePath.filter((title) => {
-    if (!title || title === '') return false;
-    if (title === projectName) return false;
-    if (title === fileName) return false;
-    // Filter out file paths (contain / or \ or end with .spec.ts/.test.ts)
-    if (title.includes('/') || title.includes('\\')) return false;
-    if (title.endsWith('.spec.ts') || title.endsWith('.test.ts')) return false;
-    if (title.endsWith('.spec.js') || title.endsWith('.test.js')) return false;
-    return true;
-  });
-
-  return [file, ...filteredTitles].join('::');
-}
-
 /**
  * Sets up the orchestrator filter as a beforeEach hook.
  * This will skip tests that are not in the current shard.
@@ -118,12 +90,10 @@ export function setupOrchestratorFilter<T extends object, W extends object>(
 
     if (allowedTestIds) {
       // Use project.testDir for consistent path resolution with test-discovery
-      const testId = buildTestId(
-        testInfo.file,
-        testInfo.titlePath,
-        testInfo.project.name,
-        testInfo.project.testDir,
-      );
+      const testId = buildTestIdFromRuntime(testInfo.file, testInfo.titlePath, {
+        projectName: testInfo.project.name,
+        baseDir: testInfo.project.testDir,
+      });
 
       const isAllowed = allowedTestIds.has(testId);
 
@@ -156,12 +126,10 @@ export function shouldRunTest(testInfo: {
   const allowedTestIds = loadShardFile();
   if (!allowedTestIds) return true;
 
-  const testId = buildTestId(
-    testInfo.file,
-    testInfo.titlePath,
-    testInfo.project.name,
-    testInfo.project.testDir,
-  );
+  const testId = buildTestIdFromRuntime(testInfo.file, testInfo.titlePath, {
+    projectName: testInfo.project.name,
+    baseDir: testInfo.project.testDir,
+  });
 
   return allowedTestIds.has(testId);
 }

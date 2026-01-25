@@ -48,6 +48,50 @@ src/
 - Graceful fallback: Always have a fallback path
 - Test coverage: Add tests for new functionality
 
+## Critical Rules
+
+### Test ID Consistency (CRITICAL)
+
+The orchestrator's correctness depends on ALL components generating **IDENTICAL test IDs** for the same test. Inconsistent IDs will cause tests to silently fail to match between shard assignment and runtime filtering.
+
+**Two contexts for test ID generation:**
+
+1. **Discovery context** (Playwright JSON output):
+   - Use `buildTestId` from `src/core/types.ts`
+   - Data comes pre-processed from Playwright's `--list` JSON
+   - titlePath already excludes project name and filename
+
+2. **Runtime context** (testInfo.titlePath):
+   - Use `buildTestIdFromRuntime` from `src/core/test-id.ts`
+   - Data comes from Playwright's runtime `testInfo.titlePath`
+   - titlePath includes project name, filename, and file paths that must be filtered
+
+**NEVER duplicate the filtering logic. ALWAYS use the shared functions from `src/core/test-id.ts`.**
+
+```typescript
+// CORRECT - Use shared function
+import { buildTestIdFromRuntime } from './core/test-id.js';
+const testId = buildTestIdFromRuntime(file, titlePath, { projectName, baseDir });
+
+// WRONG - Duplicating filtering logic
+const filteredTitles = titlePath.filter((t) => t !== projectName && ...);
+const testId = [file, ...filteredTitles].join('::');
+```
+
+### No Flaky Assumptions
+
+**NEVER make assumptions about user directory structure or naming conventions.**
+
+Bad examples (DO NOT DO):
+- "Strip `apps/` or `packages/` prefix for monorepos"
+- "Assume testDir is always `e2e/`"
+- "File paths starting with `src/` should be normalized"
+
+**All path handling must be deterministic**, based solely on:
+- Playwright's `config.rootDir` or `project.testDir`
+- Actual file paths from `testInfo.file` or JSON output
+- Standard Node.js `path.relative()` behavior
+
 ## Architecture Deep Dive
 
 ### Distribution Algorithm

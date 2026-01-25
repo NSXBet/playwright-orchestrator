@@ -32,6 +32,10 @@ import type {
   TestCase,
   TestResult,
 } from '@playwright/test/reporter';
+import {
+  buildTestIdFromRuntime,
+  filterRuntimeTitlePath,
+} from './core/test-id.js';
 
 // ANSI color codes
 const colors = {
@@ -211,25 +215,14 @@ export default class OrchestratorReporter implements Reporter {
 
   /**
    * Filter titlePath to get only describe blocks and test title.
-   * Removes: empty strings, project name, file paths
+   * Uses shared filterRuntimeTitlePath function for consistency.
    */
   private getFilteredTitles(test: TestCase): string[] {
     const titlePath = test.titlePath();
     const projectName = test.parent?.project()?.name;
     const fileName = path.basename(test.location.file);
 
-    return titlePath.filter((title) => {
-      if (!title || title === '') return false;
-      if (title === projectName) return false;
-      if (title === fileName) return false;
-      // Filter out file paths (contain / or \ or end with .spec.ts/.test.ts)
-      if (title.includes('/') || title.includes('\\')) return false;
-      if (title.endsWith('.spec.ts') || title.endsWith('.test.ts'))
-        return false;
-      if (title.endsWith('.spec.js') || title.endsWith('.test.js'))
-        return false;
-      return true;
-    });
+    return filterRuntimeTitlePath(titlePath, { projectName, fileName });
   }
 
   /**
@@ -250,15 +243,15 @@ export default class OrchestratorReporter implements Reporter {
 
   /**
    * Build test ID from TestCase.
-   * Format: {relative-file}::{describe}::{test-title}
+   * Uses shared buildTestIdFromRuntime function for consistency with fixture.
    */
   private buildTestId(test: TestCase): string {
-    // Use project's testDir for consistent path resolution with test-discovery
-    // This ensures paths match what the orchestrator assign command produces
     const testDir = test.parent?.project()?.testDir;
     const baseDir = testDir || this.rootDir || process.cwd();
-    const file = path.relative(baseDir, test.location.file).replace(/\\/g, '/');
-    const filteredTitles = this.getFilteredTitles(test);
-    return [file, ...filteredTitles].join('::');
+
+    return buildTestIdFromRuntime(test.location.file, test.titlePath(), {
+      projectName: test.parent?.project()?.name,
+      baseDir,
+    });
   }
 }
