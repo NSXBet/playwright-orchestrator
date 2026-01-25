@@ -23,10 +23,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TestType } from '@playwright/test';
 
-// Module initialization debug - this runs when the module is first imported
-process.stderr.write(
-  '[Fixture Module] Loading @nsxbet/playwright-orchestrator/fixture\n',
-);
+// Module initialization debug - only in debug mode
+if (process.env.ORCHESTRATOR_DEBUG === '1') {
+  process.stderr.write('[Fixture Module] Loading orchestrator fixture\n');
+}
 
 // Cache the shard file to avoid re-reading on every test
 let cachedAllowedTestIds: Set<string> | null = null;
@@ -60,13 +60,12 @@ function loadShardFile(): Set<string> | null {
 
     const testIds: string[] = parsed;
     cachedAllowedTestIds = new Set(testIds);
-    process.stderr.write(
-      `[Fixture] Loaded ${testIds.length} tests for this shard\n`,
-    );
-    // Also log first 3 test IDs for debugging
     if (process.env.ORCHESTRATOR_DEBUG === '1') {
       process.stderr.write(
-        `[Fixture] Sample IDs from shard file: ${testIds.slice(0, 3).join(' | ')}\n`,
+        `[Orchestrator] Loaded ${testIds.length} tests for this shard\n`,
+      );
+      process.stderr.write(
+        `[Orchestrator] Sample IDs: ${testIds.slice(0, 3).join(' | ')}\n`,
       );
     }
     return cachedAllowedTestIds;
@@ -113,13 +112,8 @@ function buildTestId(
 export function setupOrchestratorFilter<T extends object, W extends object>(
   test: TestType<T, W>,
 ): void {
-  process.stderr.write('[Fixture] setupOrchestratorFilter called\n');
-
   // biome-ignore lint/correctness/noEmptyPattern: Playwright requires empty destructuring for fixtures
   test.beforeEach(async ({}, testInfo) => {
-    process.stderr.write(
-      `[Fixture] beforeEach running for: ${testInfo.title}\n`,
-    );
     const allowedTestIds = loadShardFile();
 
     if (allowedTestIds) {
