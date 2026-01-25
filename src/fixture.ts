@@ -6,10 +6,21 @@
  *
  * Usage in your test setup file (e.g., tests/setup.ts):
  * ```typescript
- * import { test } from '@playwright/test';
- * import { setupOrchestratorFilter } from '@nsxbet/playwright-orchestrator/fixture';
+ * import { test as base } from '@playwright/test';
+ * import { withOrchestratorFilter } from '@nsxbet/playwright-orchestrator/fixture';
  *
- * setupOrchestratorFilter(test);
+ * // Create extended test with orchestrator filtering
+ * export const test = withOrchestratorFilter(base);
+ * export { expect } from '@playwright/test';
+ * ```
+ *
+ * Then in your test files:
+ * ```typescript
+ * import { test, expect } from './setup';
+ *
+ * test('my test', async ({ page }) => {
+ *   // ...
+ * });
  * ```
  *
  * Environment variables:
@@ -76,6 +87,84 @@ function loadShardFile(): Set<string> | null {
 }
 
 /**
+ * Creates an extended test with orchestrator filtering as an auto-fixture.
+ * This ensures tests not in the current shard are skipped.
+ *
+ * IMPORTANT: Use this function to create your test object, then export it.
+ * All test files should import the extended test, not the base test.
+ *
+ * @param test - The base test object from @playwright/test
+ * @returns Extended test with orchestrator filtering
+ *
+ * @example
+ * ```typescript
+ * // In setup.ts
+ * import { test as base } from '@playwright/test';
+ * import { withOrchestratorFilter } from '@nsxbet/playwright-orchestrator/fixture';
+ *
+ * export const test = withOrchestratorFilter(base);
+ *
+ * // In your.spec.ts
+ * import { test } from './setup';
+ * test('example', async ({ page }) => { ... });
+ * ```
+ */
+export function withOrchestratorFilter<T extends object, W extends object>(
+  test: TestType<T, W>,
+): TestType<T & { _orchestratorFilter: void }, W> {
+  return test.extend<{ _orchestratorFilter: void }>({
+    // @ts-expect-error - Playwright's auto fixture typing is complex
+    _orchestratorFilter: [
+      // biome-ignore lint/correctness/noEmptyPattern: Playwright requires empty destructuring
+      async ({}, use: () => Promise<void>, testInfo: { file: string; titlePath: string[]; project: { name: string; testDir: string } }) => {
+        const allowedTestIds = loadShardFile();
+
+        if (allowedTestIds) {
+          // CRITICAL: Use project.testDir for consistent path resolution with test-discovery
+          // No fallback to process.cwd() - this causes path mismatch bugs
+          const testDir = testInfo.project.testDir;
+
+          if (!testDir) {
+            throw new Error(
+              '[Orchestrator Fixture] Could not determine project testDir. ' +
+                'Ensure your playwright.config.ts has projects configured with testDir.',
+            );
+          }
+
+          const testId = buildTestIdFromRuntime(
+            testInfo.file,
+            testInfo.titlePath,
+            {
+              projectName: testInfo.project.name,
+              baseDir: testDir,
+            },
+          );
+
+          const isAllowed = allowedTestIds.has(testId);
+
+          // Debug: Write to stderr for visibility in CI logs
+          if (process.env.ORCHESTRATOR_DEBUG === '1') {
+            process.stderr.write(
+              `[Fixture] testDir=${testInfo.project.testDir} | testId=${testId} | allowed=${isAllowed}\n`,
+            );
+          }
+
+          if (!isAllowed) {
+            test.skip(true, 'Not in shard');
+          }
+        }
+
+        await use();
+      },
+      { auto: true },
+    ],
+  });
+}
+
+/**
+ * @deprecated Use `withOrchestratorFilter` instead. This function uses beforeEach
+ * which only works for the first test file processed, not subsequent files.
+ *
  * Sets up the orchestrator filter as a beforeEach hook.
  * This will skip tests that are not in the current shard.
  *
