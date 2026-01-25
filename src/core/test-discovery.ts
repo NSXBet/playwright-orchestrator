@@ -13,11 +13,15 @@ import { buildTestId } from './types.js';
  * Load tests from a pre-generated Playwright --list JSON file
  *
  * @param filePath - Path to JSON file (from `npx playwright test --list --reporter=json`)
+ * @param projectName - Optional project name to find the correct testDir
  * @returns List of discovered tests
  */
-export function loadTestListFromFile(filePath: string): DiscoveredTest[] {
+export function loadTestListFromFile(
+  filePath: string,
+  projectName?: string,
+): DiscoveredTest[] {
   const content = fs.readFileSync(filePath, 'utf-8');
-  return parsePlaywrightListOutput(content);
+  return parsePlaywrightListOutput(content, projectName);
 }
 
 /**
@@ -48,12 +52,12 @@ export function discoverTests(
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    return parsePlaywrightListOutput(output);
+    return parsePlaywrightListOutput(output, project);
   } catch (error) {
     // Playwright might exit with non-zero even for --list if there are issues
     const execError = error as { stdout?: string; stderr?: string };
     if (execError.stdout) {
-      return parsePlaywrightListOutput(execError.stdout);
+      return parsePlaywrightListOutput(execError.stdout, project);
     }
     throw error;
   }
@@ -62,38 +66,93 @@ export function discoverTests(
 /**
  * Parse Playwright --list JSON output
  *
+ * CRITICAL: Uses project.testDir for path resolution to match fixture behavior.
+ * The fixture uses testInfo.project.testDir, so discovery must use the same base.
+ *
  * @param jsonOutput - Raw JSON output from Playwright --list
+ * @param projectName - Optional project name to find the correct testDir
  * @returns List of discovered tests
  */
 export function parsePlaywrightListOutput(
   jsonOutput: string,
+  projectName?: string,
 ): DiscoveredTest[] {
   const tests: DiscoveredTest[] = [];
 
-  try {
-    const data = JSON.parse(jsonOutput) as PlaywrightListOutput;
-    const rootDir = data.config?.rootDir || process.cwd();
+  const parseAndExtract = (data: PlaywrightListOutput) => {
+    // CRITICAL: Use project.testDir instead of config.rootDir
+    // This ensures test IDs match between discovery and fixture
+    const baseDir = getProjectTestDir(data, projectName);
 
     for (const suite of data.suites) {
       // Root suites represent files - their title is the filename
       // We skip this title from titlePath since it's redundant with file
-      extractTestsFromSuite(suite, [], tests, rootDir, true);
+      extractTestsFromSuite(suite, [], tests, baseDir, true);
     }
+  };
+
+  try {
+    const data = JSON.parse(jsonOutput) as PlaywrightListOutput;
+    parseAndExtract(data);
   } catch {
     // Try parsing line by line if JSON is malformed (older Playwright versions)
     // or if output contains additional text
     const jsonMatch = jsonOutput.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const data = JSON.parse(jsonMatch[0]) as PlaywrightListOutput;
-      const rootDir = data.config?.rootDir || process.cwd();
-
-      for (const suite of data.suites) {
-        extractTestsFromSuite(suite, [], tests, rootDir, true);
-      }
+      parseAndExtract(data);
     }
   }
 
   return tests;
+}
+
+/**
+ * Get the testDir for a project from Playwright config.
+ *
+ * CRITICAL: This must match what the fixture uses (testInfo.project.testDir).
+ * No fallbacks to process.cwd() - if testDir is not found, fail with clear error.
+ *
+ * @param data - Parsed Playwright JSON output
+ * @param projectName - Optional project name to match
+ * @returns The testDir to use for path resolution
+ * @throws Error if testDir cannot be determined
+ */
+function getProjectTestDir(
+  data: PlaywrightListOutput,
+  projectName?: string,
+): string {
+  const projects = data.config?.projects;
+
+  if (!projects || projects.length === 0) {
+    throw new Error(
+      '[Orchestrator] No projects found in test-list.json. ' +
+        'Ensure your playwright.config.ts has at least one project configured.',
+    );
+  }
+
+  // Find the matching project
+  const project = projectName
+    ? projects.find((p) => p.name === projectName)
+    : projects[0]; // Use first project if no name specified
+
+  if (!project) {
+    const availableProjects = projects.map((p) => p.name).join(', ');
+    throw new Error(
+      `[Orchestrator] Project "${projectName}" not found in test-list.json. ` +
+        `Available projects: ${availableProjects}`,
+    );
+  }
+
+  if (!project.testDir) {
+    throw new Error(
+      `[Orchestrator] Project "${project.name}" has no testDir configured. ` +
+        'Ensure your playwright.config.ts project has testDir set, or the config ' +
+        'has a root-level testDir.',
+    );
+  }
+
+  return project.testDir;
 }
 
 /**

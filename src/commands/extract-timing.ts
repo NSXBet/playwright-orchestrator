@@ -40,6 +40,9 @@ export default class ExtractTiming extends Command {
     }),
   };
 
+  // Base directory for path resolution (set from report config)
+  private baseDir: string = '';
+
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtractTiming);
 
@@ -52,6 +55,14 @@ export default class ExtractTiming extends Command {
       report = JSON.parse(content) as PlaywrightReport;
     } catch {
       this.error(`Failed to read Playwright report: ${reportPath}`);
+    }
+
+    // Determine base directory from report config
+    // Use project.testDir if available, otherwise fall back to rootDir
+    this.baseDir = this.getBaseDirFromReport(report, flags.project);
+
+    if (flags.verbose) {
+      this.log(`Using base directory: ${this.baseDir}`);
     }
 
     // Extract test-level durations
@@ -151,9 +162,51 @@ export default class ExtractTiming extends Command {
 
   /**
    * Normalize file path to be relative and consistent
-   * Uses path relative to CWD for consistency with reporter and discovery
+   * Uses the base directory from report config for consistency with discovery
    */
   private normalizeFilePath(filePath: string): string {
-    return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
+    return path.relative(this.baseDir, filePath).replace(/\\/g, '/');
+  }
+
+  /**
+   * Extract base directory from Playwright report config.
+   * Prioritizes project.testDir, falls back to config.rootDir.
+   *
+   * CRITICAL: This must match what discovery uses (project.testDir).
+   */
+  private getBaseDirFromReport(
+    report: PlaywrightReport,
+    projectName: string,
+  ): string {
+    const config = report.config;
+
+    // Try to find testDir from project config
+    if (config?.projects) {
+      const project =
+        config.projects.find((p) => p.name === projectName) ||
+        config.projects[0];
+
+      if (project?.testDir) {
+        return project.testDir;
+      }
+    }
+
+    // Fall back to rootDir if available
+    if (config?.rootDir) {
+      this.warn(
+        `Project "${projectName}" has no testDir in report config. ` +
+          `Using rootDir: ${config.rootDir}. ` +
+          `This may cause test ID mismatches if testDir is configured in playwright.config.ts.`,
+      );
+      return config.rootDir;
+    }
+
+    // Last resort: use current working directory
+    this.warn(
+      'Report has no config.rootDir or project.testDir. ' +
+        `Using current directory: ${process.cwd()}. ` +
+        'This may cause test ID mismatches.',
+    );
+    return process.cwd();
   }
 }
