@@ -8,11 +8,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     },
     "./reporter": {
       "types": "./dist/reporter.d.ts",
-      "import": "./dist/reporter.js"
+      "import": "./dist/reporter.js",
+      "require": "./dist/reporter.js"
     }
   },
   "bin": {
