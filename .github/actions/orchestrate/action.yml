@@ -3,36 +3,18 @@ description: Assign tests to shards using historical timing data (storage-agnost
 
 inputs:
   test-list:
-    description: Path to JSON file with test list (from playwright --list --reporter=json). When provided, skips internal test discovery. This is the recommended approach for CI.
-    required: false
-    default: ''
-  test-dir:
-    description: Path to test directory (not required when using test-list)
-    required: false
-    default: ''
+    description: Path to JSON file with test list (from playwright --list --reporter=json). Generate this in your workflow before calling this action.
+    required: true
+  timing-file:
+    description: Path to timing data JSON file. Required for optimal distribution.
+    required: true
   shards:
     description: Total number of shards
     required: true
-  timing-file:
-    description: Path to timing data JSON file (optional)
-    required: false
-    default: ''
   level:
     description: Distribution level (file or test)
     required: false
     default: 'test'
-  glob-pattern:
-    description: Glob pattern for test files
-    required: false
-    default: '**/*.spec.ts'
-  project:
-    description: Playwright project name (only used when test-list is not provided)
-    required: false
-    default: ''
-  config-dir:
-    description: Directory where playwright.config.ts is located (only used when test-list is not provided)
-    required: false
-    default: ''
 
 outputs:
   shard-files:
@@ -58,50 +40,31 @@ runs:
       id: assign
       shell: bash
       run: |
-        TOTAL_SHARDS="${{ inputs.shards }}"
         TEST_LIST="${{ inputs.test-list }}"
-        PROJECT="${{ inputs.project }}"
-        CONFIG_DIR="${{ inputs.config-dir }}"
+        TIMING_FILE="${{ inputs.timing-file }}"
+        TOTAL_SHARDS="${{ inputs.shards }}"
+
+        # Validate test-list exists
+        if [ ! -f "$TEST_LIST" ]; then
+          echo "::error::test-list file not found: $TEST_LIST"
+          echo "::error::Generate it with: npx playwright test --list --reporter=json > test-list.json"
+          exit 1
+        fi
 
         # Build command arguments
         CMD_ARGS=(
+          --test-list "$TEST_LIST"
           --shards "$TOTAL_SHARDS"
           --level "${{ inputs.level }}"
           --output-format json
         )
 
-        # Use test-list if provided (recommended for CI)
-        if [ -n "$TEST_LIST" ] && [ -f "$TEST_LIST" ]; then
-          CMD_ARGS+=(--test-list "$TEST_LIST")
-          echo "Using pre-generated test list from $TEST_LIST"
+        # Add timing file if it exists (may not exist on first run)
+        if [ -f "$TIMING_FILE" ]; then
+          CMD_ARGS+=(--timing-file "$TIMING_FILE")
+          echo "Using timing data from $TIMING_FILE"
         else
-          # Fall back to test discovery (requires test-dir)
-          if [ -z "${{ inputs.test-dir }}" ]; then
-            echo "::error::Either test-list or test-dir must be provided"
-            exit 1
-          fi
-          CMD_ARGS+=(--test-dir "${{ inputs.test-dir }}")
-          CMD_ARGS+=(--glob-pattern "${{ inputs.glob-pattern }}")
-          
-          # Add project if specified
-          if [ -n "$PROJECT" ]; then
-            CMD_ARGS+=(--project "$PROJECT")
-            echo "Using Playwright project: $PROJECT"
-          fi
-
-          # Add config-dir if specified
-          if [ -n "$CONFIG_DIR" ]; then
-            CMD_ARGS+=(--config-dir "$CONFIG_DIR")
-            echo "Using Playwright config from: $CONFIG_DIR"
-          fi
-        fi
-
-        # Add timing file if available
-        if [ -n "${{ inputs.timing-file }}" ] && [ -f "${{ inputs.timing-file }}" ]; then
-          CMD_ARGS+=(--timing-file "${{ inputs.timing-file }}")
-          echo "Using timing data from ${{ inputs.timing-file }}"
-        else
-          echo "No timing data available, using estimation"
+          echo "::notice::Timing file not found ($TIMING_FILE), using estimation for first run"
         fi
 
         # Try to run orchestrator

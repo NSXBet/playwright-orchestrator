@@ -65,9 +65,9 @@ jobs:
         id: orchestrate
         uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         with:
-          test-list: test-list.json # Use pre-generated list (recommended)
+          test-list: test-list.json # Required: pre-generated list
+          timing-file: timing-data.json # Required: timing data
           shards: ${{ env.SHARDS }}
-          timing-file: timing-data.json
 
   # ============================================
   # Phase 2: Run tests (parallel matrix)

@@ -25,29 +25,48 @@ This orchestrator:
 
 Result: All shards finish at roughly the same time.
 
+### Test-Level Distribution
+
+Unlike other solutions that only distribute at the **file level**, this orchestrator supports **test-level distribution**. This matters when you have files with many tests of varying durations - distributing individual tests achieves much better balance than distributing entire files.
+
+```
+File-level:  login.spec.ts (50 tests, 10min) → all go to shard 1
+Test-level:  login.spec.ts tests → spread across shards 1-4
+```
+
+Test-level distribution requires the reporter AND a test fixture to filter tests at runtime. See [Setup](#setup) below.
+
 ## Quick Start
 
 ```bash
 # Install
 bun add -D @nsxbet/playwright-orchestrator
 
-# Discover tests (uses Playwright --list for accurate discovery)
-playwright-orchestrator list-tests --test-dir ./e2e --project "Mobile Chrome"
+# Generate test list
+bunx playwright test --list --reporter=json --project "Mobile Chrome" > test-list.json
 
-# Assign tests to shards (with timing data)
-playwright-orchestrator assign \
-  --test-dir ./e2e \
+# Assign tests to shards
+bunx playwright-orchestrator assign \
+  --test-list ./test-list.json \
   --timing-file ./timing-data.json \
-  --shards 4 \
-  --project "Mobile Chrome"  # Recommended for accurate test discovery
+  --shards 4 > assignment.json
 
-# Extract timing from report
-playwright-orchestrator extract-timing \
+# Extract each shard's tests to separate files
+jq '.shards."1"' assignment.json > shard-1.json
+jq '.shards."2"' assignment.json > shard-2.json
+jq '.shards."3"' assignment.json > shard-3.json
+jq '.shards."4"' assignment.json > shard-4.json
+
+# Run tests for a specific shard (fixture filters based on ORCHESTRATOR_SHARD_FILE)
+ORCHESTRATOR_SHARD_FILE=shard-1.json bunx playwright test --project "Mobile Chrome"
+
+# Extract timing from report after tests complete
+bunx playwright-orchestrator extract-timing \
   --report-file ./playwright-report/results.json \
   --output-file ./shard-1-timing.json
 
-# Merge timing data
-playwright-orchestrator merge-timing \
+# Merge timing data from all shards
+bunx playwright-orchestrator merge-timing \
   --existing ./timing-data.json \
   --new ./shard-1-timing.json ./shard-2-timing.json \
   --output ./timing-data.json
@@ -70,9 +89,11 @@ playwright-orchestrator merge-timing \
 2. **Run Tests**: Each shard reads its files from `needs.orchestrate.outputs`
 3. **Merge**: Collect timing from all shards, update history with EMA
 
-## Reporter Setup
+## Setup
 
-Add the reporter to your `playwright.config.ts`:
+For test-level distribution to work, you need **two things**:
+
+### 1. Reporter (in `playwright.config.ts`)
 
 ```typescript
 import { defineConfig } from "@playwright/test";
@@ -82,7 +103,33 @@ export default defineConfig({
 });
 ```
 
-The reporter reads `ORCHESTRATOR_SHARD_FILE` env var to filter tests for the current shard.
+### 2. Test Fixture (in your test setup file)
+
+Wrap your base test with `withOrchestratorFilter`:
+
+```typescript
+// e2e/setup.ts
+import { test as base } from "@playwright/test";
+import { withOrchestratorFilter } from "@nsxbet/playwright-orchestrator/fixture";
+
+export const test = withOrchestratorFilter(base);
+export { expect } from "@playwright/test";
+```
+
+Then use this `test` in your spec files:
+
+```typescript
+// e2e/login.spec.ts
+import { test, expect } from "./setup";
+
+test("should login", async ({ page }) => {
+  // ...
+});
+```
+
+The reporter and fixture work together:
+- **Reporter**: Reads `ORCHESTRATOR_SHARD_FILE` env var to know which tests belong to this shard
+- **Fixture**: Skips tests that don't belong to the current shard at runtime
 
 ## Local Testing
 
@@ -143,9 +190,9 @@ jobs:
       - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         id: orchestrate
         with:
-          test-list: test-list.json # Use pre-generated list (recommended)
+          test-list: test-list.json # Required: pre-generated list
+          timing-file: timing-data.json # Required: timing data
           shards: 4
-          timing-file: timing-data.json
 
   # Phase 2: Run tests (parallel matrix)
   e2e:
@@ -176,16 +223,13 @@ See [docs/external-integration.md](./docs/external-integration.md) for complete 
 
 ## CLI Commands
 
-| Command          | Description                                                                      |
-| ---------------- | -------------------------------------------------------------------------------- |
-| `list-tests`     | Discover tests in a project (uses Playwright `--list`)                           |
-| `assign`         | Distribute tests across shards (uses Playwright `--list` for accurate discovery) |
-| `extract-timing` | Extract timing from Playwright report                                            |
-| `merge-timing`   | Merge timing data with EMA smoothing                                             |
+| Command          | Description                              |
+| ---------------- | ---------------------------------------- |
+| `assign`         | Distribute tests across shards           |
+| `extract-timing` | Extract timing from Playwright report    |
+| `merge-timing`   | Merge timing data with EMA smoothing     |
 
 Run `playwright-orchestrator <command> --help` for details.
-
-**Important**: The `--project` flag is recommended for both `list-tests` and `assign` commands to ensure accurate test discovery, especially for parameterized tests (e.g., `test.each`).
 
 ## Development
 
@@ -234,6 +278,18 @@ Test scenarios covered in `examples/monorepo/`:
 - Deep subdirectory paths
 
 See [AGENTS.md](./AGENTS.md) for AI assistant instructions.
+
+## Cache Strategy
+
+GitHub Actions cache is branch-scoped, which creates challenges for sharing timing data between PRs and main. We recommend a **promote-on-merge** pattern:
+
+1. Each PR branch saves to its own cache key
+2. PRs restore from their own cache, falling back to main
+3. When a PR is merged, a workflow promotes the PR's cache to main
+
+This avoids race conditions between concurrent PRs while ensuring main always has the latest timing data.
+
+See [Cache Strategy for PRs](./docs/external-integration.md#cache-strategy-for-prs) for implementation details.
 
 ## License
 
