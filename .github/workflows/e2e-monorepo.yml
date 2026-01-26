@@ -60,10 +60,11 @@ jobs:
       - name: Install monorepo dependencies
         working-directory: examples/monorepo/apps/web
         run: |
-          # Copy tarball and install as dev dependency for fixture
+          # Copy tarball to install as dev dependency for fixture
           cp $GITHUB_WORKSPACE/nsxbet-playwright-orchestrator-*.tgz .
-          npm install ./nsxbet-playwright-orchestrator-*.tgz
+          # Install deps first, then override orchestrator with local tarball
           npm install
+          npm install ./nsxbet-playwright-orchestrator-*.tgz
           npx playwright install chromium
 
       - name: Generate test list
@@ -79,6 +80,7 @@ jobs:
         uses: ./.github/actions/orchestrate
         with:
           test-list: examples/monorepo/apps/web/test-list.json
+          timing-file: timing-data.json
           shards: 2
           level: test
 
@@ -116,10 +118,11 @@ jobs:
       - name: Install monorepo dependencies
         working-directory: examples/monorepo/apps/web
         run: |
-          # Copy tarball and install as dev dependency for fixture
+          # Copy tarball to install as dev dependency for fixture
           cp $GITHUB_WORKSPACE/nsxbet-playwright-orchestrator-*.tgz .
-          npm install ./nsxbet-playwright-orchestrator-*.tgz
+          # Install deps first, then override orchestrator with local tarball
           npm install
+          npm install ./nsxbet-playwright-orchestrator-*.tgz
           npx playwright install chromium
 
       # Use the REAL get-shard action

@@ -2,8 +2,5 @@
   "name": "monorepo-example",
   "version": "1.0.0",
   "private": true,
-  "description": "Monorepo example to test orchestrator path resolution",
-  "devDependencies": {
-    "@nsxbet/playwright-orchestrator": "0.0.0-local"
-  }
+  "description": "Monorepo example to test orchestrator path resolution"
 }
