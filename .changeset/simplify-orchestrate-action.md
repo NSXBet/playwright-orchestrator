@@ -16,6 +16,10 @@ Simplify orchestrate action by making inputs required
 - `glob-pattern` - Removed (was only used with test-dir)
 - `project` - Removed from action (was only used with test-dir for discovery)
 
+**Removed CLI command:**
+
+- `list-tests` - Removed as users should generate test list directly with Playwright
+
 **Why this change:**
 
 The previous optional inputs (`test-dir`, `config-dir`) allowed users to let the action discover tests internally, which often led to path resolution issues in monorepos. By requiring `test-list`, users must generate the test list from the correct working directory in their workflow, ensuring consistent test ID generation between discovery and runtime.

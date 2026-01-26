@@ -12,6 +12,9 @@
       ],
       "fixture": [
         "./dist/fixture.d.ts"
+      ],
+      "core": [
+        "./dist/core/index.d.ts"
       ]
     }
   },
@@ -30,6 +33,11 @@
       "types": "./dist/fixture.d.ts",
       "import": "./dist/fixture.js",
       "require": "./dist/fixture.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "require": "./dist/core/index.js"
     }
   },
   "bin": {
