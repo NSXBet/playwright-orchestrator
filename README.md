@@ -84,6 +84,72 @@ export default defineConfig({
 
 The reporter reads `ORCHESTRATOR_SHARD_FILE` env var to filter tests for the current shard.
 
+## Test-Level Distribution
+
+The orchestrator distributes individual tests (not just files) across shards for optimal balance. This requires a filtering mechanism to run only the assigned tests in each shard.
+
+### How It Works
+
+```
+Orchestrator → JSON file → Reporter/Fixture → Playwright
+     ↓              ↓              ↓
+  Distributes   test-ids       Filters via
+    tests       per shard      Set.has()
+```
+
+### Why This Approach
+
+Previous approaches failed:
+
+| Approach | Problem |
+|----------|---------|
+| `--grep` pattern | Substring collision: `"login"` matches `"login with SSO"` |
+| `file:line` | Breaks `test.each()` parameterized tests |
+| CLI arguments | Bash syntax errors with `()`, `\|`, `$` in test names |
+
+The solution uses a JSON file with test IDs and exact `Set.has()` matching.
+
+### Test ID Format
+
+```
+{relative-path}::{describe}::{test-title}
+```
+
+Example: `e2e/login.spec.ts::Login::should login`
+
+### Filtering Approaches
+
+**1. Reporter** (shown above) - Simplest setup, just add to reporter list.
+
+**2. Fixture** - Recommended for projects with a test setup file:
+
+```typescript
+// setup.ts
+import { test as base, expect } from "@playwright/test";
+import { withOrchestratorFilter } from "@nsxbet/playwright-orchestrator/fixture";
+
+export const test = withOrchestratorFilter(base);
+export { expect };
+
+// your.spec.ts
+import { test, expect } from "./setup";
+
+test("my test", async ({ page }) => {
+  // ...
+});
+```
+
+The fixture uses an auto-fixture pattern that calls `test.skip()` for tests not in the shard.
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ORCHESTRATOR_SHARD_FILE` | Path to JSON file with array of test IDs |
+| `ORCHESTRATOR_DEBUG` | Set to `"1"` to enable debug logging |
+
+See [docs/test-level-reporter.md](./docs/test-level-reporter.md) for complete documentation and edge cases.
+
 ## Local Testing
 
 Reproduce CI shard behavior locally:
