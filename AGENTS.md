@@ -386,10 +386,27 @@ Actions do NOT handle cache/artifacts internally. Users control:
     path: timing-data.json
     key: playwright-timing-${{ github.ref_name }}
 
+# Generate test list first
+- run: npx playwright test --list --reporter=json > test-list.json
+
 - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
   with:
-    timing-file: timing-data.json  # User provides the file
+    test-list: test-list.json  # Required: pre-generated list
+    timing-file: timing-data.json  # Required: timing data
+    shards: 4
 ```
+
+### Cache Strategy for PRs
+
+GitHub Actions cache is branch-scoped. A PR branch can read from main's cache, but main cannot read from a PR branch's cache after merge. Use the **promote-on-merge** pattern:
+
+1. Each PR saves to branch-specific key: `playwright-timing-${{ github.ref_name }}-$project`
+2. PRs restore with fallback to main: `playwright-timing-main-$project`
+3. On PR merge, a workflow promotes the PR's cache to main's cache
+
+This avoids race conditions between concurrent PRs while ensuring main always has the latest timing data from merged PRs.
+
+See [docs/external-integration.md](./docs/external-integration.md#cache-strategy-for-prs) for implementation details.
 
 ### Key Actions
 
@@ -403,18 +420,18 @@ Actions do NOT handle cache/artifacts internally. Users control:
 
 ### Test Discovery
 
-The orchestrator uses Playwright's `--list` command for accurate test discovery. This properly handles:
+Users must generate the test list themselves using Playwright's `--list` command:
+
+```bash
+npx playwright test --list --reporter=json --project "Mobile Chrome" > test-list.json
+```
+
+This ensures accurate discovery of:
 - Parameterized tests (`test.each`, data-driven tests)
 - Template literals in test names (e.g., `${variable}`)
 - All test syntax patterns
 
-**Important**: Always pass the `--project` flag to `assign` and `list-tests` commands for accurate discovery:
-
-```bash
-playwright-orchestrator assign --test-dir ./e2e --shards 4 --project "Mobile Chrome"
-```
-
-The regex-based fallback (`--use-fallback`) should only be used if Playwright `--list` is unavailable.
+The generated `test-list.json` is then passed to the `assign` command via `--test-list`.
 
 ### Fallback Behavior
 

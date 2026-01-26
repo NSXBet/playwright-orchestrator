@@ -139,6 +139,8 @@ jobs:
       shard-files: ${{ steps.orchestrate.outputs.shard-files }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: npm ci
       - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
       
       - uses: actions/cache/restore@v4
@@ -146,12 +148,22 @@ jobs:
           path: timing-data.json
           key: playwright-timing-${{ github.ref_name }}
       
+      # IMPORTANT: In monorepos, use working-directory to run from the same
+      # directory where tests will execute (ensures consistent path resolution)
+      - name: Generate test list
+        run: |
+          npx playwright test --list --reporter=json > test-list.json
+          if [ ! -s test-list.json ]; then
+            echo "Error: test-list.json is empty or was not created"
+            exit 1
+          fi
+      
       - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         id: orchestrate
         with:
-          test-dir: ./e2e
-          shards: 4
+          test-list: test-list.json
           timing-file: timing-data.json
+          shards: 4
           level: test
 
   e2e:

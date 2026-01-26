@@ -94,9 +94,9 @@ jobs:
         id: orchestrate
         uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         with:
-          test-list: test-list.json # Use pre-generated list (recommended)
+          test-list: test-list.json # Required: pre-generated list
+          timing-file: timing-data.json # Required: timing data
           shards: ${{ env.SHARDS }}
-          timing-file: timing-data.json
 
   # ============================================
   # Phase 2: Run tests (parallel matrix)
@@ -232,6 +232,7 @@ jobs:
       - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         with:
           test-list: apps/web/test-list.json  # Path from repo root
+          timing-file: timing-data.json
           shards: 4
 
   e2e:
@@ -318,12 +319,18 @@ Assigns tests to shards.
 - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
   id: orchestrate
   with:
-    test-dir: ./e2e # Required: path to tests
+    test-list: test-list.json # Required: path to test list JSON
+    timing-file: timing-data.json # Required: path to timing data
     shards: 4 # Required: total shard count
-    timing-file: "" # Optional: path to timing data
     level: test # Optional: 'test' or 'file'
-    project: "" # Optional: Playwright project name
 ```
+
+**Inputs:**
+
+- `test-list` (required): Path to JSON file from `npx playwright test --list --reporter=json`
+- `timing-file` (required): Path to timing data JSON file (created by merge-timing action)
+- `shards` (required): Total number of shards
+- `level` (optional): Distribution level - `test` (default) or `file`
 
 **Outputs:**
 
@@ -332,6 +339,8 @@ Assigns tests to shards.
 - `total-tests`: Total number of tests
 - `is-optimal`: Whether distribution is optimal
 - `use-orchestrator`: Whether orchestration succeeded
+
+**Note:** On first run, the timing file may not exist yet. The action will use estimation and emit a notice.
 
 ### get-shard
 
@@ -404,6 +413,130 @@ This gives you flexibility to:
 - Use custom cache keys
 - Store timing data in S3 or other backends
 - Skip caching entirely for debugging
+
+## Cache Strategy for PRs
+
+GitHub Actions cache is branch-scoped: a PR branch can read from main's cache, but main cannot read from a PR branch's cache. This creates a challenge: timing data collected during PR runs is "lost" after merge.
+
+### Recommended Pattern: Promote on Merge
+
+Use branch-specific cache keys with a promotion workflow:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ PR opened (branch: feature-x)                                   │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. Restore: playwright-timing-feature-x-$project                │
+│    Fallback: playwright-timing-main-$project                    │
+│ 2. Run tests, collect timing                                    │
+│ 3. Save: playwright-timing-feature-x-$project-$run_id           │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ (merge)
+┌─────────────────────────────────────────────────────────────────┐
+│ PR merged → promote-timing-cache workflow                       │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. Restore: playwright-timing-feature-x-$project                │
+│ 2. Save: playwright-timing-main-$project-$run_id                │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Next PR (branch: feature-y)                                     │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. Restore: playwright-timing-feature-y → miss                  │
+│    Fallback: playwright-timing-main → hit (updated data!)       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Implementation
+
+**In your test workflow** (`_test-playwright.yaml`):
+
+```yaml
+env:
+  SHARDS: 4
+
+jobs:
+  e2e-tests:
+    strategy:
+      matrix:
+        shardIndex: [1, 2, 3, 4]
+    steps:
+      # ... setup steps ...
+      
+      - name: Restore timing cache
+        uses: actions/cache/restore@v4
+        with:
+          path: playwright-timing.json
+          key: playwright-timing-${{ github.ref_name }}-${{ inputs.project }}
+          restore-keys: |
+            playwright-timing-main-${{ inputs.project }}
+            playwright-timing-
+
+      # ... run tests, extract timing ...
+
+  merge-reports:
+    needs: [e2e-tests]
+    steps:
+      # ... merge timing from all shards ...
+      
+      - name: Save timing cache
+        uses: actions/cache/save@v4
+        with:
+          path: playwright-timing.json
+          key: playwright-timing-${{ github.ref_name }}-${{ inputs.project }}-${{ github.run_id }}
+```
+
+**In your PR closed workflow** (`on_pr_closed.yaml`):
+
+```yaml
+name: Pull Request - Closed
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  promote-timing-cache:
+    name: Promote timing cache
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        project: ["Mobile Chrome", "Mobile Safari"]
+    steps:
+      - name: Restore PR branch cache
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: playwright-timing.json
+          key: playwright-timing-${{ github.event.pull_request.head.ref }}-${{ matrix.project }}
+
+      - name: Promote to main cache
+        if: steps.restore.outputs.cache-hit == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: playwright-timing.json
+          key: playwright-timing-main-${{ matrix.project }}-${{ github.run_id }}
+```
+
+### Benefits
+
+- **No race conditions**: Each PR has isolated cache
+- **Main always updated**: Only receives data from merged PRs that passed CI
+- **PRs inherit from main**: Start with the latest timing data
+- **Lightweight promotion**: Just copies files, no test execution
+
+### Alternative: S3 or External Storage
+
+If you use S3-backed cache (like runs-on), you may have more flexibility with cross-branch access. In that case, you can use a simpler shared key:
+
+```yaml
+# All branches read/write to the same key
+key: playwright-timing-${{ inputs.project }}
+```
+
+However, this can cause race conditions if multiple PRs run simultaneously. The promote-on-merge pattern avoids this by isolating each PR's timing data.
 
 ## Cancellation Handling
 
