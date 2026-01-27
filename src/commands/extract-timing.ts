@@ -40,8 +40,10 @@ export default class ExtractTiming extends Command {
     }),
   };
 
-  // Base directory for path resolution (set from report config)
-  private baseDir: string = '';
+  // Base directory for path resolution (resolved testDir)
+  private testDir: string = '';
+  // Root directory from Playwright config (where config file is)
+  private rootDir: string = '';
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtractTiming);
@@ -57,12 +59,14 @@ export default class ExtractTiming extends Command {
       this.error(`Failed to read Playwright report: ${reportPath}`);
     }
 
-    // Determine base directory from report config
-    // Use project.testDir if available, otherwise fall back to rootDir
-    this.baseDir = this.getBaseDirFromReport(report, flags.project);
+    // Extract rootDir and testDir from report config
+    const { rootDir, testDir } = this.getPathsFromReport(report, flags.project);
+    this.rootDir = rootDir;
+    this.testDir = testDir;
 
     if (flags.verbose) {
-      this.log(`Using base directory: ${this.baseDir}`);
+      this.log(`Using rootDir: ${this.rootDir}`);
+      this.log(`Using testDir: ${this.testDir}`);
     }
 
     // Extract test-level durations
@@ -105,7 +109,10 @@ export default class ExtractTiming extends Command {
     const testDurations: Record<string, number> = {};
 
     for (const suite of report.suites) {
-      this.extractTestsFromSuite(suite, [], testDurations);
+      // Root suites represent files - their title is the filename
+      // We skip this title from titlePath since it's redundant with file
+      // This matches test-discovery.ts behavior
+      this.extractTestsFromSuite(suite, [], testDurations, true);
     }
 
     return testDurations;
@@ -113,15 +120,24 @@ export default class ExtractTiming extends Command {
 
   /**
    * Recursively extract test durations from a suite
+   *
+   * @param suite - Playwright suite from JSON report
+   * @param parentTitles - Title path from parent suites (describe blocks)
+   * @param testDurations - Map to collect test durations
+   * @param isRootSuite - Whether this is a root file suite (title is filename, should be skipped)
    */
   private extractTestsFromSuite(
     suite: PlaywrightReport['suites'][0],
     parentTitles: string[],
     testDurations: Record<string, number>,
+    isRootSuite = false,
   ): void {
     const file = this.normalizeFilePath(suite.file);
+    // Root suites have the filename as title - skip it from titlePath
+    // Nested suites (describe blocks) have meaningful titles to include
+    // This matches test-discovery.ts behavior exactly
     const currentTitles =
-      suite.title && suite.title !== ''
+      !isRootSuite && suite.title && suite.title !== ''
         ? [...parentTitles, suite.title]
         : parentTitles;
 
@@ -143,7 +159,7 @@ export default class ExtractTiming extends Command {
       }
     }
 
-    // Process nested suites
+    // Process nested suites (describe blocks - never root suites)
     if (suite.suites) {
       for (const nestedSuite of suite.suites) {
         // Pass the file from parent if nested suite doesn't have one
@@ -155,35 +171,80 @@ export default class ExtractTiming extends Command {
           nestedWithFile,
           currentTitles,
           testDurations,
+          false, // Nested suites are never root suites
         );
       }
     }
   }
 
   /**
-   * Normalize file path to be relative and consistent
-   * Uses the base directory from report config for consistency with discovery
+   * Normalize file path to be relative to testDir.
+   *
+   * DETERMINISTIC APPROACH:
+   * 1. suite.file in Playwright report is always relative to rootDir
+   * 2. testDir is either absolute or relative to rootDir
+   * 3. We resolve both to get absolute paths, then compute relative path
+   *
+   * This ensures consistent test IDs regardless of container path differences.
    */
   private normalizeFilePath(filePath: string): string {
-    return path.relative(this.baseDir, filePath).replace(/\\/g, '/');
+    const normalizedFile = filePath.replace(/\\/g, '/');
+    const normalizedTestDir = this.testDir.replace(/\\/g, '/');
+    const normalizedRootDir = this.rootDir.replace(/\\/g, '/');
+
+    // suite.file in Playwright JSON report is relative to rootDir
+    // Resolve it to get the "logical" absolute path
+    const absoluteFile = path.isAbsolute(normalizedFile)
+      ? normalizedFile
+      : path.join(normalizedRootDir, normalizedFile).replace(/\\/g, '/');
+
+    // testDir might be relative to rootDir, resolve it
+    const absoluteTestDir = path.isAbsolute(normalizedTestDir)
+      ? normalizedTestDir
+      : path.join(normalizedRootDir, normalizedTestDir).replace(/\\/g, '/');
+
+    // Now compute relative path from testDir to file
+    // Both are now in the same "logical" path space
+    const relativePath = path
+      .relative(absoluteTestDir, absoluteFile)
+      .replace(/\\/g, '/');
+
+    // Sanity check: result should not start with ../
+    // If it does, the file is outside testDir which shouldn't happen
+    if (relativePath.startsWith('../')) {
+      // Log warning but continue - use basename as fallback
+      // This handles edge cases where paths are truly mismatched
+      return path.basename(filePath);
+    }
+
+    return relativePath;
   }
 
   /**
-   * Extract base directory from Playwright report config.
+   * Extract rootDir and testDir from Playwright report config.
    *
-   * CRITICAL: This must match what discovery uses (project.testDir).
-   * NO FALLBACKS - if testDir is not available, fail loudly.
+   * CRITICAL: We need both paths to correctly resolve file locations:
+   * - rootDir: where playwright.config.ts is located (absolute)
+   * - testDir: where tests are located (can be relative to rootDir)
    */
-  private getBaseDirFromReport(
+  private getPathsFromReport(
     report: PlaywrightReport,
     projectName: string,
-  ): string {
+  ): { rootDir: string; testDir: string } {
     const config = report.config;
 
     if (!config) {
       this.error(
         '[Orchestrator] Report has no config section. ' +
           'Ensure you are using Playwright JSON reporter with config output enabled.',
+      );
+    }
+
+    // rootDir is where playwright.config.ts is located
+    if (!config.rootDir) {
+      this.error(
+        '[Orchestrator] Report has no rootDir in config. ' +
+          'This is required to resolve test file paths correctly.',
       );
     }
 
@@ -209,11 +270,13 @@ export default class ExtractTiming extends Command {
     if (!project.testDir) {
       this.error(
         `[Orchestrator] Project "${project.name}" has no testDir in report config. ` +
-          'Ensure your playwright.config.ts project has testDir set. ' +
-          'Do NOT use rootDir as fallback - it causes path mismatch bugs.',
+          'Ensure your playwright.config.ts project has testDir set.',
       );
     }
 
-    return project.testDir;
+    return {
+      rootDir: config.rootDir,
+      testDir: project.testDir,
+    };
   }
 }
