@@ -140,8 +140,13 @@ jobs:
           echo "has-tests: ${{ steps.shard.outputs.has-tests }}"
           echo "test-count: ${{ steps.shard.outputs.test-count }}"
           if [ -n "${{ steps.shard.outputs.shard-file }}" ] && [ -f "${{ steps.shard.outputs.shard-file }}" ]; then
-            echo "=== Shard file contents ==="
-            cat "${{ steps.shard.outputs.shard-file }}"
+            echo "=== Shard file contents (discovery test IDs) ==="
+            cat "${{ steps.shard.outputs.shard-file }}" | jq -r '.[:5][]' 2>/dev/null || cat "${{ steps.shard.outputs.shard-file }}"
+            echo ""
+            echo "=== Test ID Format Analysis ==="
+            SAMPLE_ID=$(cat "${{ steps.shard.outputs.shard-file }}" | jq -r '.[0]' 2>/dev/null || echo "")
+            echo "Sample: $SAMPLE_ID"
+            echo "Parts: $(echo "$SAMPLE_ID" | tr '::' '\n' | head -5)"
           fi
 
       - name: Download test-list.json for validation
@@ -276,6 +281,15 @@ jobs:
           
           echo "✓ Orchestrator filtering validated: $PASSED_COUNT tests executed (expected: $EXPECTED_COUNT, within tolerance: $TOLERANCE)"
 
+      # Upload the raw Playwright JSON report for debugging
+      - name: Upload Playwright JSON report
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-shard-${{ matrix.shardIndex }}
+          path: examples/monorepo/apps/web/test-results/results.json
+          if-no-files-found: ignore
+
       # Use the REAL extract-timing action
       - name: Extract timing
         if: success() || failure()
@@ -284,6 +298,61 @@ jobs:
           report-file: examples/monorepo/apps/web/test-results/results.json
           output-file: timing-shard-${{ matrix.shardIndex }}.json
           shard: ${{ matrix.shardIndex }}
+
+      # CRITICAL: Validate timing artifact test ID format
+      # This catches the bug where:
+      # 1. Path mismatch causes ../../../ in test IDs
+      # 2. Root suite title (filename) is included in test IDs
+      - name: Validate timing artifact test ID format
+        if: success() || failure()
+        run: |
+          echo "=== Validating Timing Artifact Test ID Format ==="
+          
+          if [ ! -f "timing-shard-${{ matrix.shardIndex }}.json" ]; then
+            echo "No timing artifact found, skipping validation"
+            exit 0
+          fi
+          
+          # Extract all test IDs from the timing artifact
+          echo "Sample test IDs from timing artifact:"
+          cat "timing-shard-${{ matrix.shardIndex }}.json" | jq -r '.tests | keys[:5][]' 2>/dev/null || echo "Could not parse"
+          echo ""
+          
+          # BUG 1: Check for ../ path traversal (path mismatch bug)
+          # Bug produces: ../../../file.spec.ts::...
+          # Correct is:   file.spec.ts::... or subdir/file.spec.ts::...
+          PATH_MISMATCH_BUG=$(cat "timing-shard-${{ matrix.shardIndex }}.json" | jq -r '.tests | keys[]' | grep -E '^\.\.' || true)
+          
+          if [ -n "$PATH_MISMATCH_BUG" ]; then
+            echo "::error::BUG DETECTED! Path mismatch causing ../ in test IDs!"
+            echo "::error::testDir and suite.file paths are resolved from different bases"
+            echo ""
+            echo "Examples of buggy test IDs with path mismatch:"
+            echo "$PATH_MISMATCH_BUG" | head -5
+            echo ""
+            echo "Expected format: file.spec.ts::Describe::test"
+            echo "Actual format:   ../../../file.spec.ts::..."
+            exit 1
+          fi
+          
+          # BUG 2: Check for duplicate filename bug
+          # Bug produces: file.spec.ts::file.spec.ts::Describe::test
+          # Pattern: look for .spec.ts or .spec.js appearing twice after first ::
+          DUPLICATE_FILENAME_BUG=$(cat "timing-shard-${{ matrix.shardIndex }}.json" | jq -r '.tests | keys[]' | grep -E '\.spec\.(ts|js)::[^:]*\.spec\.(ts|js)::' || true)
+          
+          if [ -n "$DUPLICATE_FILENAME_BUG" ]; then
+            echo "::error::BUG DETECTED! Duplicate filename in test IDs!"
+            echo "::error::Root suite title (filename) is being included in titlePath"
+            echo ""
+            echo "Examples of buggy test IDs with duplicate filename:"
+            echo "$DUPLICATE_FILENAME_BUG" | head -5
+            echo ""
+            echo "Expected format: file.spec.ts::Describe::test"
+            echo "Actual format:   file.spec.ts::file.spec.ts::Describe::test"
+            exit 1
+          fi
+          
+          echo "✓ No path mismatch or duplicate filename bugs detected in timing artifact"
 
       - name: Upload timing artifact
         if: success() || failure()
@@ -348,3 +417,84 @@ jobs:
             echo "::error::No merged timing file created"
             exit 1
           fi
+
+      # Download test-list.json to validate round-trip
+      - name: Download test-list.json
+        uses: actions/download-artifact@v4
+        with:
+          name: test-list-json
+
+      # CRITICAL: Validate that timing data can be USED by orchestrator
+      # This is the round-trip test: extract-timing -> merge -> assign
+      # If test IDs don't match, all tests will be "estimated" (no timing match)
+      - name: Validate timing data round-trip
+        run: |
+          echo "=== Validating Timing Data Round-Trip ==="
+          echo ""
+          echo "This validates that timing data generated by extract-timing"
+          echo "can be correctly matched by the assign command."
+          echo "If test IDs are inconsistent, timing won't be used!"
+          echo ""
+          
+          # Run assign with the merged timing data
+          RESULT=$(playwright-orchestrator assign \
+            --test-list test-list.json \
+            --timing-file playwright-timing.json \
+            --shards 2 \
+            --level test \
+            --output-format json)
+          
+          echo "=== Assign Output ==="
+          echo "$RESULT" | jq '.'
+          echo ""
+          
+          # Extract key metrics
+          TOTAL_TESTS=$(echo "$RESULT" | jq -r '.totalTests')
+          ESTIMATED_COUNT=$(echo "$RESULT" | jq -r '.estimatedTests | length')
+          IS_OPTIMAL=$(echo "$RESULT" | jq -r '.isOptimal')
+          
+          echo "Total tests discovered: $TOTAL_TESTS"
+          echo "Tests with estimated duration (no timing match): $ESTIMATED_COUNT"
+          echo "Optimal solution: $IS_OPTIMAL"
+          echo ""
+          
+          # CRITICAL: If timing exists but all tests are "estimated", IDs don't match!
+          TIMING_TEST_COUNT=$(cat playwright-timing.json | jq '.tests | length')
+          echo "Timing data has $TIMING_TEST_COUNT test entries"
+          
+          if [ "$TIMING_TEST_COUNT" -gt 0 ] && [ "$ESTIMATED_COUNT" -eq "$TOTAL_TESTS" ]; then
+            echo "::error::TIMING DATA NOT BEING USED!"
+            echo "::error::Timing file has $TIMING_TEST_COUNT entries but ALL $TOTAL_TESTS tests are estimated"
+            echo "::error::This means test IDs from extract-timing don't match test IDs from discovery"
+            echo ""
+            echo "Sample test IDs from timing file:"
+            cat playwright-timing.json | jq -r '.tests | keys[:5][]'
+            echo ""
+            echo "Sample test IDs from assign (discovered):"
+            echo "$RESULT" | jq -r '.shards["1"][:5][]'
+            exit 1
+          fi
+          
+          # Allow some estimated tests (new tests without history) but most should have timing
+          MAX_ESTIMATED_RATIO=0.2  # Allow up to 20% estimated
+          ESTIMATED_RATIO=$(echo "scale=2; $ESTIMATED_COUNT / $TOTAL_TESTS" | bc)
+          
+          echo "Estimated ratio: $ESTIMATED_RATIO (max allowed: $MAX_ESTIMATED_RATIO)"
+          
+          # Use integer comparison (multiply by 100)
+          ESTIMATED_PCT=$((ESTIMATED_COUNT * 100 / TOTAL_TESTS))
+          MAX_ESTIMATED_PCT=20
+          
+          if [ "$ESTIMATED_PCT" -gt "$MAX_ESTIMATED_PCT" ]; then
+            echo "::warning::High ratio of estimated tests: ${ESTIMATED_PCT}%"
+            echo "::warning::This suggests some test IDs don't match between extract-timing and discovery"
+            echo ""
+            echo "Estimated tests (no timing match):"
+            echo "$RESULT" | jq -r '.estimatedTests[:10][]'
+            # Don't fail, just warn - some drift is expected
+          fi
+          
+          echo ""
+          echo "✓ Timing data round-trip validated!"
+          echo "  - $((TOTAL_TESTS - ESTIMATED_COUNT)) tests matched timing data"
+          echo "  - $ESTIMATED_COUNT tests estimated (new or ID mismatch)"
