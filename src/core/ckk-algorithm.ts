@@ -277,22 +277,21 @@ function assignWithLPTInternal(
   );
 
   for (const test of sortedTests) {
-    // Find shard with minimum effective load, with file-aware tiebreaking
+    // Find shard with minimum effective load after assignment (including penalty)
     let minIdx = 0;
-    let minEffective = effectiveLoads[0] ?? 0;
-    let minHasFile = shardFiles[0]?.has(test.file) ?? false;
+    let minCost = Infinity;
 
-    for (let i = 1; i < numShards; i++) {
-      const effective = effectiveLoads[i] ?? 0;
-      const hasFile = shardFiles[i]?.has(test.file) ?? false;
-
-      if (
-        effective < minEffective ||
-        (effective === minEffective && hasFile && !minHasFile)
-      ) {
-        minEffective = effective;
+    for (let i = 0; i < numShards; i++) {
+      let penalty = 0;
+      if (fileAffinityPenalty > 0 && !shardFiles[i]?.has(test.file)) {
+        const total = fileTestCounts.get(test.file) ?? 1;
+        const remaining = fileRemaining.get(test.file) ?? 1;
+        penalty = Math.round(fileAffinityPenalty * (remaining / total));
+      }
+      const cost = (effectiveLoads[i] ?? 0) + test.duration + penalty;
+      if (cost < minCost) {
+        minCost = cost;
         minIdx = i;
-        minHasFile = hasFile;
       }
     }
 

@@ -406,7 +406,7 @@ The system SHALL support a file affinity penalty that discourages splitting test
 - **GIVEN** the `assign` command is executed without `--file-affinity` flag
 - **AND** timing data is available
 - **WHEN** tests are distributed across shards
-- **THEN** the file affinity penalty is automatically calculated from timing data (P25 of test durations)
+- **THEN** the file affinity penalty is automatically calculated from timing data (P25 of per-file average durations)
 - **AND** the penalty is applied during distribution
 
 #### Scenario: File affinity disabled explicitly
@@ -424,7 +424,7 @@ The system SHALL support a file affinity penalty that discourages splitting test
   - `page-c.spec.ts`: tests at 8s, 10s, 12s (avg 10s)
   - `page-d.spec.ts`: tests at 30s, 35s (avg 32.5s)
 - **WHEN** the file affinity penalty is calculated
-- **THEN** the penalty equals the P25 of per-file averages [10s, 20s, 32.5s, 45s] (approximately 12.5s)
+- **THEN** the penalty equals the P25 of per-file averages [10s, 20s, 32.5s, 45s] (approximately 17.5s)
 
 #### Scenario: Fallback penalty when no timing data
 

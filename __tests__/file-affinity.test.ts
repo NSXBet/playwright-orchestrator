@@ -202,10 +202,8 @@ describe('CKK with file affinity', () => {
 
     const result = assignWithCKK(tests, 2, 1000, 5000);
 
-    // Optimal without penalty: {120, 10, 10} vs {60} = 140 vs 60
-    // Better: {120} vs {60, 10, 10} = 120 vs 80
+    // Optimal without penalty: {120} vs {60, 10, 10} = 120 vs 80
     // With 5s penalty, splitting heavy is still better than keeping together
-    // Makespan should be close to 100 (optimal: {120} vs {60+10+10}=80)
     expect(result.makespan).toBeLessThanOrEqual(125000);
   });
 });
