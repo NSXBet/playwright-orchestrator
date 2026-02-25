@@ -1,5 +1,15 @@
 # @nsxbet/playwright-orchestrator
 
+## 1.1.0
+
+### Minor Changes
+
+- [#44](https://github.com/NSXBet/playwright-orchestrator/pull/44) [`46a1b23`](https://github.com/NSXBet/playwright-orchestrator/commit/46a1b23ab15e63970d7ddf274148705660c1fe08) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Add file affinity to test distribution: tests from the same file are preferentially grouped on the same shard to reduce redundant page/context initialization costs. The penalty is auto-calculated from timing data (P25 of per-file average durations) and amortized by remaining same-file tests. CKK branch-and-bound uses file-aware dedup, penalty-aware lower bounds, and LPT file-aware tiebreaking. It can be overridden with `--file-affinity-penalty` or disabled with `--no-file-affinity`.
+
+### Patch Changes
+
+- [#44](https://github.com/NSXBet/playwright-orchestrator/pull/44) [`46a1b23`](https://github.com/NSXBet/playwright-orchestrator/commit/46a1b23ab15e63970d7ddf274148705660c1fe08) Thanks [@gtkatakura](https://github.com/gtkatakura)! - fix: filter-report now strips orchestrator-skipped results from within merged tests, not just entire specs
+
 ## 1.0.0
 
 ### Major Changes
