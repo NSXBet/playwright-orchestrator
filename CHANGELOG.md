@@ -1,5 +1,23 @@
 # @nsxbet/playwright-orchestrator
 
+## 1.0.0
+
+### Major Changes
+
+- [#42](https://github.com/NSXBet/playwright-orchestrator/pull/42) [`0923e22`](https://github.com/NSXBet/playwright-orchestrator/commit/0923e224c5d12b92feb9231533d68560b6f7a917) Thanks [@gtkatakura](https://github.com/gtkatakura)! - v1: Breaking changes for stricter defaults
+
+  - Removed deprecated `setupOrchestratorFilter` — use `withOrchestratorFilter` instead
+  - `--shard-file` is now required on `extract-timing` (was optional)
+  - `--project` is now required on `extract-timing` (was optional, defaulted to 'default')
+  - `--test-list` is now required on `assign` (removed `--test-dir`, `--config-dir`, `--use-fallback`, `--glob-pattern`, `--level file`)
+
+### Minor Changes
+
+- [#42](https://github.com/NSXBet/playwright-orchestrator/pull/42) [`0923e22`](https://github.com/NSXBet/playwright-orchestrator/commit/0923e224c5d12b92feb9231533d68560b6f7a917) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Add report filtering to remove orchestrator-skipped tests
+
+  - Added `filterJson` reporter option to remove non-shard specs from JSON reports using test-ID matching, with stats recalculation
+  - Added `filter-report` CLI command and GitHub Action to remove orchestrator-skipped tests from merged reports
+
 ## 0.8.1
 
 ### Patch Changes
