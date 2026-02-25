@@ -70,9 +70,24 @@ export default class FilterReport extends Command {
   }
 
   /**
-   * Remove specs where ALL tests are orchestrator-skipped
-   * (status "skipped" with annotation "Not in shard").
-   * Prune empty suites after removal.
+   * Check if a test has an orchestrator-skip annotation ("Not in shard").
+   */
+  private isOrchestratorSkipped(test: Record<string, unknown>): boolean {
+    const annotations = test.annotations as
+      | Array<{ type?: string; description?: string }>
+      | undefined;
+    return (
+      annotations?.some(
+        (a) => a.type === 'skip' && a.description === 'Not in shard',
+      ) ?? false
+    );
+  }
+
+  /**
+   * Remove orchestrator-skipped entries at three levels:
+   * 1. Results: strip skipped results from tests with "Not in shard" annotation
+   * 2. Tests: remove tests with no remaining results
+   * 3. Specs/Suites: remove empty specs and prune empty suites
    */
   private filterSuites(suites: Array<Record<string, unknown>>): void {
     for (let i = suites.length - 1; i >= 0; i--) {
@@ -80,27 +95,43 @@ export default class FilterReport extends Command {
       if (!suite) continue;
 
       if (Array.isArray(suite.specs)) {
-        suite.specs = (suite.specs as Array<Record<string, unknown>>).filter(
-          (spec) => {
-            const tests = spec.tests as
+        const specs = suite.specs as Array<Record<string, unknown>>;
+
+        for (const spec of specs) {
+          const tests = spec.tests as
+            | Array<Record<string, unknown>>
+            | undefined;
+          if (!tests) continue;
+
+          // Result-level: strip skipped results from orchestrator-skipped tests
+          for (const test of tests) {
+            if (!this.isOrchestratorSkipped(test)) continue;
+            const results = test.results as
               | Array<Record<string, unknown>>
               | undefined;
-            if (!tests || tests.length === 0) return true;
+            if (!results) continue;
 
-            const allOrchestratorSkipped = tests.every((test) => {
-              const status = test.status as string | undefined;
-              if (status !== 'skipped') return false;
-              const annotations = test.annotations as
-                | Array<{ type?: string; description?: string }>
-                | undefined;
-              return annotations?.some(
-                (a) => a.type === 'skip' && a.description === 'Not in shard',
-              );
-            });
+            test.results = results.filter(
+              (r) => (r.status as string) !== 'skipped',
+            );
+          }
 
-            return !allOrchestratorSkipped;
-          },
-        );
+          // Test-level: remove tests with no remaining results
+          spec.tests = tests.filter((test) => {
+            const results = test.results as
+              | Array<Record<string, unknown>>
+              | undefined;
+            return results && results.length > 0;
+          });
+        }
+
+        // Spec-level: remove specs with no remaining tests
+        suite.specs = specs.filter((spec) => {
+          const tests = spec.tests as
+            | Array<Record<string, unknown>>
+            | undefined;
+          return tests && tests.length > 0;
+        });
       }
 
       if (Array.isArray(suite.suites)) {

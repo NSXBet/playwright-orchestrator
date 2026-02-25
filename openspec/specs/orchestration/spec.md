@@ -204,7 +204,7 @@ The orchestrator reporter SHALL optionally filter a Playwright JSON report file 
 
 ### Requirement: Report Filtering Command
 
-The system SHALL provide a `filter-report` CLI command that removes orchestrator-skipped tests from a Playwright JSON report, identified by the annotation `"Not in shard"`.
+The system SHALL provide a `filter-report` CLI command that removes orchestrator-skipped tests from a Playwright JSON report, identified by the annotation `"Not in shard"`. The filter SHALL operate at the results level within each test, not just at the spec level.
 
 #### Scenario: Remove orchestrator-skipped tests from merged report
 
@@ -225,6 +225,30 @@ The system SHALL provide a `filter-report` CLI command that removes orchestrator
 - **GIVEN** the `filter-report` command is called without `--output-file`
 - **WHEN** filtering completes
 - **THEN** the input file is overwritten with the filtered report
+
+#### Scenario: Strip orchestrator-skipped results from merged tests
+
+- **GIVEN** a merged Playwright JSON report where a single test has multiple results from different shards
+- **AND** some results are from shards that ran the test (status: "passed" or "failed")
+- **AND** other results are from shards that skipped the test (status: "skipped" with "Not in shard" annotation on the test)
+- **WHEN** the `filter-report` command is executed
+- **THEN** only the non-orchestrator-skipped results remain within the test
+- **AND** the orchestrator-skipped results are removed from the `results[]` array
+
+#### Scenario: Remove tests with only orchestrator-skipped results
+
+- **GIVEN** a merged Playwright JSON report where a test has multiple results
+- **AND** ALL results are orchestrator-skipped (status: "skipped" with "Not in shard" annotation)
+- **WHEN** the `filter-report` command is executed
+- **THEN** the entire test is removed from its parent spec
+- **AND** if no tests remain, the spec is removed
+
+#### Scenario: Preserve genuine user-skipped results
+
+- **GIVEN** a merged Playwright JSON report where a test has a result with status "skipped"
+- **AND** the test's skip annotation description is NOT "Not in shard" (e.g., "not ready yet", "WIP")
+- **WHEN** the `filter-report` command is executed
+- **THEN** the user-skipped result is preserved
 
 ### Requirement: Reporter-Based Test Filtering
 
