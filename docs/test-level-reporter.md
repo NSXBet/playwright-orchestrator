@@ -104,6 +104,7 @@ The reporter:
 2. Uses `Set.has()` for exact matching (no substring collisions)
 3. Prints clean output showing only shard tests
 4. Provides accurate test counts ("Running X tests" = shard tests only)
+5. Optionally rewrites the JSON report (`filterJson`) to remove non-shard specs and recalculate stats
 
 **Note:** The orchestrator reporter replaces the need for Playwright's `list` reporter. Do not use both together as it will produce duplicate output.
 
@@ -118,12 +119,18 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   reporter: process.env.CI
     ? [
-        ["@nsxbet/playwright-orchestrator/reporter"],
-        ["json", { outputFile: "results.json" }],
+        ["@nsxbet/playwright-orchestrator/reporter", {
+          filterJson: "playwright-report/results.json",
+        }],
+        ["json", { outputFile: "playwright-report/results.json" }],
+        ["html"],
       ]
-    : [["list"]],  // Use standard list reporter for local dev
+    : [["list"], ["html"]],
 });
 ```
+
+**Reporter Options:**
+- `filterJson` (optional): Path to the JSON report file. When set, the reporter rewrites the JSON report in `onExit` after all reporters finish, removing specs whose test IDs are not in the shard file. This also recalculates the `.stats` object to match the filtered suites. Prevents timing corruption and report pollution from orchestrator-skipped tests.
 
 **Environment Variables:**
 - `ORCHESTRATOR_SHARD_FILE`: Path to JSON file with test IDs for this shard

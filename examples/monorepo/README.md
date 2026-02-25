@@ -8,7 +8,7 @@ This example simulates a real monorepo structure (like bet-app) to test orchestr
 examples/monorepo/
 ├── apps/web/
 │   ├── src/test/e2e/
-│   │   ├── setup.ts                  # Calls setupOrchestratorFilter
+│   │   ├── setup.ts                  # Calls withOrchestratorFilter
 │   │   ├── login.spec.ts             # Basic tests
 │   │   ├── home.spec.ts              # Basic tests
 │   │   ├── parameterized.spec.ts     # test.each patterns

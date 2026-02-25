@@ -11,10 +11,6 @@ inputs:
   shards:
     description: Total number of shards
     required: true
-  level:
-    description: Distribution level (file or test)
-    required: false
-    default: 'test'
 
 outputs:
   shard-files:
@@ -55,7 +51,6 @@ runs:
         CMD_ARGS=(
           --test-list "$TEST_LIST"
           --shards "$TOTAL_SHARDS"
-          --level "${{ inputs.level }}"
           --output-format json
         )
 

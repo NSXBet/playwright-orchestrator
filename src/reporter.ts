@@ -57,11 +57,17 @@ function color(code: keyof typeof colors, text: string): string {
   return useColors ? `${colors[code]}${text}${colors.reset}` : text;
 }
 
+interface OrchestratorReporterOptions {
+  filterJson?: string;
+}
+
 export default class OrchestratorReporter implements Reporter {
   private allowedTestIds: Set<string> | null = null;
   private debug = process.env.ORCHESTRATOR_DEBUG === '1';
   private startTime = 0;
   private rootDir = '';
+  private testDir = '';
+  private filterJsonPath: string | undefined;
 
   // Counters for summary
   private passed = 0;
@@ -69,9 +75,14 @@ export default class OrchestratorReporter implements Reporter {
   private skipped = 0;
   private filtered = 0;
 
+  constructor(options?: OrchestratorReporterOptions) {
+    this.filterJsonPath = options?.filterJson;
+  }
+
   onBegin(config: FullConfig, suite: Suite) {
     this.startTime = Date.now();
     this.rootDir = config.rootDir;
+    this.testDir = config.projects[0]?.testDir ?? config.rootDir;
     const shardFile = process.env.ORCHESTRATOR_SHARD_FILE;
 
     if (!shardFile || !fs.existsSync(shardFile)) {
@@ -239,6 +250,180 @@ export default class OrchestratorReporter implements Reporter {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.round(seconds % 60);
     return `${minutes}m ${remainingSeconds}s`;
+  }
+
+  async onExit() {
+    if (!this.filterJsonPath || !this.allowedTestIds) return;
+
+    const reportPath = path.resolve(this.filterJsonPath);
+    if (!fs.existsSync(reportPath)) {
+      if (this.debug) {
+        console.log(
+          color(
+            'gray',
+            `[Orchestrator] filterJson file not found: ${reportPath}`,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      const report = JSON.parse(fs.readFileSync(reportPath, 'utf-8'));
+      if (!report.suites) return;
+
+      const testDir =
+        report.config?.projects?.[0]?.testDir || this.testDir || this.rootDir;
+
+      const beforeCount = this.countSpecs(report.suites);
+      this.filterSuitesById(
+        report.suites,
+        testDir,
+        this.allowedTestIds,
+        [],
+        true,
+      );
+      const afterCount = this.countSpecs(report.suites);
+
+      if (report.stats) {
+        report.stats = this.recalculateStats(report.suites, report.stats);
+      }
+
+      fs.writeFileSync(reportPath, JSON.stringify(report));
+
+      if (this.debug) {
+        console.log(
+          color(
+            'gray',
+            `[Orchestrator] Filtered JSON report: ${beforeCount} → ${afterCount} specs (removed ${beforeCount - afterCount})`,
+          ),
+        );
+      }
+    } catch (error) {
+      console.error('[Orchestrator] Failed to filter JSON report:', error);
+    }
+  }
+
+  /**
+   * Filter specs by checking test IDs against the allowedTestIds set.
+   * Builds test IDs from the JSON report structure (file path + describe chain + spec title),
+   * matching the same format used by discovery (buildTestId) and runtime (buildTestIdFromRuntime).
+   *
+   * This correctly handles ALL non-shard tests, including genuinely skipped tests
+   * (test.skip, test.fixme, test.describe.skip) that never receive the "Not in shard" annotation
+   * because the orchestrator fixture doesn't run for them.
+   */
+  private filterSuitesById(
+    suites: Array<Record<string, unknown>>,
+    testDir: string,
+    allowedIds: Set<string>,
+    parentTitles: string[],
+    isRootLevel: boolean,
+  ): void {
+    for (let i = suites.length - 1; i >= 0; i--) {
+      const suite = suites[i];
+      if (!suite) continue;
+
+      const suiteTitle = suite.title as string;
+      const suiteFile = suite.file as string | undefined;
+
+      // Root-level suites are file-level (title = filename) → skip from describe chain
+      // Nested suites are describe blocks → include title in chain
+      const currentTitles = isRootLevel ? [] : [...parentTitles, suiteTitle];
+
+      const filePath = suiteFile
+        ? this.resolveReportFilePath(suiteFile, testDir)
+        : '';
+
+      if (Array.isArray(suite.specs)) {
+        suite.specs = (suite.specs as Array<Record<string, unknown>>).filter(
+          (spec) => {
+            const specTitle = spec.title as string;
+            const testId = [filePath, ...currentTitles, specTitle].join('::');
+            return allowedIds.has(testId);
+          },
+        );
+      }
+
+      if (Array.isArray(suite.suites)) {
+        this.filterSuitesById(
+          suite.suites as Array<Record<string, unknown>>,
+          testDir,
+          allowedIds,
+          currentTitles,
+          false,
+        );
+      }
+
+      const hasSpecs =
+        Array.isArray(suite.specs) && (suite.specs as unknown[]).length > 0;
+      const hasSubSuites =
+        Array.isArray(suite.suites) && (suite.suites as unknown[]).length > 0;
+      if (!hasSpecs && !hasSubSuites) {
+        suites.splice(i, 1);
+      }
+    }
+  }
+
+  private resolveReportFilePath(filePath: string, testDir: string): string {
+    if (path.isAbsolute(filePath)) {
+      return path.relative(testDir, filePath).replace(/\\/g, '/');
+    }
+    return filePath.replace(/\\/g, '/');
+  }
+
+  /**
+   * Recalculate the stats object to match the filtered suites.
+   * Playwright JSON stats use: expected (passed), skipped, unexpected (failed), flaky.
+   */
+  private recalculateStats(
+    suites: Array<Record<string, unknown>>,
+    originalStats: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const counts = { expected: 0, unexpected: 0, skipped: 0, flaky: 0 };
+    this.countTestStatuses(suites, counts);
+    return { ...originalStats, ...counts };
+  }
+
+  private countTestStatuses(
+    suites: Array<Record<string, unknown>>,
+    counts: Record<string, number>,
+  ): void {
+    for (const suite of suites) {
+      if (Array.isArray(suite.specs)) {
+        for (const spec of suite.specs as Array<Record<string, unknown>>) {
+          const tests = spec.tests as
+            | Array<Record<string, unknown>>
+            | undefined;
+          if (!tests) continue;
+          for (const test of tests) {
+            const status = test.status as string;
+            if (status in counts && counts[status] !== undefined) {
+              counts[status] = counts[status] + 1;
+            }
+          }
+        }
+      }
+      if (Array.isArray(suite.suites)) {
+        this.countTestStatuses(
+          suite.suites as Array<Record<string, unknown>>,
+          counts,
+        );
+      }
+    }
+  }
+
+  private countSpecs(suites: Array<Record<string, unknown>>): number {
+    let count = 0;
+    for (const suite of suites) {
+      if (Array.isArray(suite.specs))
+        count += (suite.specs as unknown[]).length;
+      if (Array.isArray(suite.suites))
+        count += this.countSpecs(
+          suite.suites as Array<Record<string, unknown>>,
+        );
+    }
+    return count;
   }
 
   /**

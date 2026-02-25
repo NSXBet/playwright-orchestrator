@@ -2,14 +2,28 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './src/test/e2e',
-  // Orchestrator reporter handles list-style output for sharded runs
-  // No need for separate 'list' reporter when using orchestrator
-  reporter: process.env.CI
-    ? [
-        ['@nsxbet/playwright-orchestrator/reporter'],
-        ['json', { outputFile: 'test-results/results.json' }],
-      ]
-    : [['list']],
+  reporter:
+    process.env.CI === 'true'
+      ? [
+          [
+            '@nsxbet/playwright-orchestrator/reporter',
+            { filterJson: 'playwright-report/results.json' },
+          ],
+          ['blob'],
+          ['html'],
+          ['json', { outputFile: 'playwright-report/results.json' }],
+          ['github'],
+          [
+            '@estruyf/github-actions-reporter',
+            {
+              showAnnotations: false,
+              useDetails: true,
+              showError: true,
+              includeResults: ['pass', 'fail', 'flaky'],
+            },
+          ],
+        ]
+      : [['list'], ['html']],
   use: {
     browserName: 'chromium',
   },

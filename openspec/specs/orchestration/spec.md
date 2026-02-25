@@ -3,24 +3,23 @@
 ## Purpose
 
 Intelligent distribution of Playwright tests across CI shards using historical timing data. The orchestrator learns test durations from previous runs and uses the CKK algorithm to balance shards, minimizing total CI time.
-
 ## Requirements
-
 ### Requirement: Test Discovery
 
-The system SHALL discover all tests in a Playwright project.
+The system SHALL discover all tests from a pre-generated Playwright JSON test list.
 
-#### Scenario: Discover tests via Playwright CLI
+#### Scenario: Discover tests from test-list JSON
 
 - **GIVEN** a Playwright project with test files
-- **WHEN** the `list-tests` command is executed with `--test-dir`
+- **AND** a pre-generated `test-list.json` from `npx playwright test --list --reporter=json`
+- **WHEN** the `assign` command is executed with `--test-list`
 - **THEN** the system returns a list of all tests with their IDs in format `file::describe::title`
 
-#### Scenario: Fallback to file parsing
+#### Scenario: Missing test-list file
 
-- **GIVEN** a Playwright project where `playwright --list` fails
-- **WHEN** the `list-tests` command is executed with `--use-fallback`
-- **THEN** the system parses test files directly and returns discovered tests
+- **GIVEN** the `--test-list` flag is not provided or the file does not exist
+- **WHEN** the `assign` command is executed
+- **THEN** the system SHALL exit with an error message guiding the user to generate the test list
 
 ### Requirement: Duration Estimation
 
@@ -77,19 +76,28 @@ The system SHALL distribute tests across shards to minimize the maximum shard du
 
 ### Requirement: Timing Data Collection
 
-The system SHALL extract timing data from Playwright JSON reports.
+The system SHALL extract timing data from Playwright JSON reports, scoped to a specific shard and project.
 
 #### Scenario: Extract test-level timing
 
 - **GIVEN** a Playwright JSON report with test results
-- **WHEN** the `extract-timing` command is executed
-- **THEN** the system extracts duration for each test, including retries
+- **AND** a shard file listing the tests assigned to this shard
+- **AND** a project name
+- **WHEN** the `extract-timing` command is executed with `--shard-file` and `--project`
+- **THEN** the system extracts duration only for tests listed in the shard file
+- **AND** zero-duration orchestrator-skipped entries are excluded
 
 #### Scenario: Handle missing report
 
 - **GIVEN** a non-existent report file path
 - **WHEN** the `extract-timing` command is executed
 - **THEN** the system exits with an error message
+
+#### Scenario: Handle malformed shard file
+
+- **GIVEN** a shard file that is not valid JSON or not a JSON array
+- **WHEN** the `extract-timing` command is executed
+- **THEN** the system SHALL exit with a clear error message
 
 ### Requirement: Timing Data Merging
 
@@ -116,22 +124,6 @@ The system SHALL merge timing data using Exponential Moving Average (EMA).
 - **AND** prune-days = 30
 - **WHEN** the `merge-timing` command is executed
 - **THEN** test X is removed from timing data
-
-### Requirement: Grep Pattern Generation
-
-The system SHALL generate regex patterns for Playwright `--grep` flag.
-
-#### Scenario: Generate OR pattern
-
-- **GIVEN** tests assigned to shard 1: ["should create", "should update"]
-- **WHEN** grep patterns are generated
-- **THEN** shard 1 pattern is `should create|should update`
-
-#### Scenario: Escape regex special characters
-
-- **GIVEN** a test title with special characters: "should handle (edge case)"
-- **WHEN** grep pattern is generated
-- **THEN** the pattern escapes parentheses: `should handle \(edge case\)`
 
 ### Requirement: Graceful Fallback
 
@@ -176,3 +168,199 @@ The system SHALL support local CI testing using Act.
 - **THEN** Run 1 uses fallback distribution
 - **AND** Run 2 uses timing-based distribution
 - **AND** timing data is persisted between runs
+
+### Requirement: Reporter JSON Filtering
+
+The orchestrator reporter SHALL optionally filter a Playwright JSON report file after all reporters have finished writing, removing tests not assigned to the current shard.
+
+#### Scenario: filterJson option rewrites report in onExit
+
+- **GIVEN** the orchestrator reporter is configured with `filterJson: 'results.json'`
+- **AND** a shard file is active via `ORCHESTRATOR_SHARD_FILE`
+- **WHEN** all reporters finish and `onExit` is called
+- **THEN** the reporter reads `results.json`, removes specs not in the shard file, prunes empty suites, and rewrites the file
+
+#### Scenario: filterJson omitted is a no-op
+
+- **GIVEN** the orchestrator reporter is configured without `filterJson`
+- **WHEN** `onExit` is called
+- **THEN** no JSON file is read or modified
+
+#### Scenario: No shard file disables filtering
+
+- **GIVEN** the orchestrator reporter is configured with `filterJson: 'results.json'`
+- **AND** no `ORCHESTRATOR_SHARD_FILE` is set
+- **WHEN** `onExit` is called
+- **THEN** no JSON file is modified
+
+### Requirement: Report Filtering Command
+
+The system SHALL provide a `filter-report` CLI command that removes orchestrator-skipped tests from a Playwright JSON report, identified by the annotation `"Not in shard"`.
+
+#### Scenario: Remove orchestrator-skipped tests from merged report
+
+- **GIVEN** a merged Playwright JSON report containing tests from multiple shards
+- **AND** some tests have `status: "skipped"` with annotation `description: "Not in shard"`
+- **WHEN** the `filter-report` command is executed
+- **THEN** those orchestrator-skipped specs are removed
+- **AND** genuine user-skipped tests (`test.skip()`, `test.fixme()`) are preserved
+
+#### Scenario: Report with no orchestrator skips is unchanged
+
+- **GIVEN** a Playwright JSON report with no `"Not in shard"` annotations
+- **WHEN** the `filter-report` command is executed
+- **THEN** the output is identical to the input
+
+#### Scenario: In-place filtering
+
+- **GIVEN** the `filter-report` command is called without `--output-file`
+- **WHEN** filtering completes
+- **THEN** the input file is overwritten with the filtered report
+
+### Requirement: Reporter-Based Test Filtering
+
+The system SHALL provide a Custom Playwright Reporter that filters tests at runtime using exact Set lookup.
+
+#### Scenario: Load test IDs from JSON file
+
+- **GIVEN** a JSON file at path specified by `ORCHESTRATOR_SHARD_FILE` env var
+- **AND** the file contains an array of test IDs
+- **WHEN** the reporter's `onBegin` hook is called
+- **THEN** the reporter loads the test IDs into a Set
+- **AND** logs the count of loaded tests
+
+#### Scenario: Skip tests not in shard
+
+- **GIVEN** the reporter has loaded allowed test IDs
+- **AND** a test with ID not in the allowed set
+- **WHEN** the reporter's `onTestBegin` hook is called
+- **THEN** the reporter adds `{ type: "skip" }` annotation to the test
+- **AND** Playwright skips the test
+
+#### Scenario: Run tests in shard
+
+- **GIVEN** the reporter has loaded allowed test IDs
+- **AND** a test with ID in the allowed set
+- **WHEN** the reporter's `onTestBegin` hook is called
+- **THEN** the reporter does not add skip annotation
+- **AND** the test runs normally
+
+#### Scenario: Graceful fallback when no shard file
+
+- **GIVEN** the `ORCHESTRATOR_SHARD_FILE` env var is not set
+- **OR** the file does not exist
+- **WHEN** the reporter's `onBegin` hook is called
+- **THEN** the reporter allows all tests to run
+- **AND** no tests are skipped
+
+### Requirement: Exact Test ID Matching
+
+The system SHALL use exact string matching for test IDs, avoiding substring collisions.
+
+#### Scenario: No substring collision
+
+- **GIVEN** shard file contains `["login.spec.ts::Login::should login"]`
+- **AND** the test suite has tests:
+  - `login.spec.ts::Login::should login`
+  - `login.spec.ts::Login::should login with SSO`
+- **WHEN** the reporter filters tests
+- **THEN** only `should login` runs (exact match)
+- **AND** `should login with SSO` is skipped (no substring match)
+
+#### Scenario: Case-sensitive matching
+
+- **GIVEN** shard file contains `["test.spec.ts::Suite::Should Login"]`
+- **AND** the test suite has test `test.spec.ts::Suite::should login`
+- **WHEN** the reporter filters tests
+- **THEN** the test is skipped (case mismatch)
+
+### Requirement: Test ID Format
+
+The system SHALL use consistent test ID format: `{relative-file}::{describe}::{test-title}`.
+
+#### Scenario: Build test ID from TestCase
+
+- **GIVEN** a Playwright TestCase with:
+  - `location.file`: `/project/e2e/login.spec.ts`
+  - `titlePath()`: `["Login", "should login"]`
+- **AND** working directory is `/project`
+- **WHEN** the reporter builds the test ID
+- **THEN** the ID is `e2e/login.spec.ts::Login::should login`
+
+#### Scenario: Handle nested describes
+
+- **GIVEN** a Playwright TestCase with:
+  - `location.file`: `/project/e2e/auth.spec.ts`
+  - `titlePath()`: `["Auth", "OAuth", "Google", "should redirect"]`
+- **WHEN** the reporter builds the test ID
+- **THEN** the ID is `e2e/auth.spec.ts::Auth::OAuth::Google::should redirect`
+
+#### Scenario: Normalize Windows paths
+
+- **GIVEN** a Playwright TestCase with:
+  - `location.file`: `C:\project\e2e\login.spec.ts` (Windows)
+- **WHEN** the reporter builds the test ID
+- **THEN** the path uses forward slashes: `e2e/login.spec.ts::...`
+
+### Requirement: Shell-Safe Test Names
+
+The system SHALL handle test names with special characters without shell escaping issues.
+
+#### Scenario: Parentheses in test name
+
+- **GIVEN** a test named `should show error (500)`
+- **AND** it is in the shard file
+- **WHEN** Playwright runs with the reporter
+- **THEN** the test runs without bash syntax errors
+
+#### Scenario: Pipe character in test name
+
+- **GIVEN** a test named `should parse A | B | C`
+- **AND** it is in the shard file
+- **WHEN** Playwright runs with the reporter
+- **THEN** the test runs without bash pipe interpretation
+
+#### Scenario: Dollar sign in test name
+
+- **GIVEN** a test named `should format $100.00`
+- **AND** it is in the shard file
+- **WHEN** Playwright runs with the reporter
+- **THEN** the test runs without bash variable expansion
+
+### Requirement: Debug Mode
+
+The system SHALL provide debug logging when `ORCHESTRATOR_DEBUG=1`.
+
+#### Scenario: Log skipped tests in debug mode
+
+- **GIVEN** `ORCHESTRATOR_DEBUG=1` env var is set
+- **AND** the reporter skips a test
+- **WHEN** the test is processed
+- **THEN** the reporter logs `[Skip] {testId}` to console
+
+#### Scenario: Silent in normal mode
+
+- **GIVEN** `ORCHESTRATOR_DEBUG` env var is not set
+- **AND** the reporter skips a test
+- **WHEN** the test is processed
+- **THEN** the reporter does not log individual skip messages
+
+### Requirement: Parameterized Test Support
+
+The system SHALL correctly handle `test.each()` parameterized tests.
+
+#### Scenario: Unique ID per parameter set
+
+- **GIVEN** a test defined as `test.each([1, 2, 3])('value %i works', ...)`
+- **WHEN** Playwright generates tests
+- **THEN** each iteration has a unique title: `value 1 works`, `value 2 works`, `value 3 works`
+- **AND** the reporter can filter each iteration independently
+
+#### Scenario: Filter single iteration
+
+- **GIVEN** shard file contains `["math.spec.ts::Math::value 2 works"]`
+- **AND** the test uses `test.each([1, 2, 3])('value %i works', ...)`
+- **WHEN** the reporter filters tests
+- **THEN** only `value 2 works` iteration runs
+- **AND** `value 1 works` and `value 3 works` are skipped
+

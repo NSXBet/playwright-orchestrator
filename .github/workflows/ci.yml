@@ -65,11 +65,11 @@ jobs:
 
       - name: Start Verdaccio
         run: |
-          npm install -g verdaccio
+          bun install -g verdaccio
           mkdir -p verdaccio/storage
           verdaccio --config verdaccio/config.yaml &
           sleep 5
-          
+
           # Setup npm to use Verdaccio with basic auth
           AUTH_TOKEN=$(echo -n 'test:test' | base64)
           echo "registry=http://localhost:4873/" > ~/.npmrc

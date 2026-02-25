@@ -20,34 +20,87 @@ import type {
 
 describe('Extract Timing Command', () => {
   /**
-   * Helper to run extract-timing command with a mock Playwright report
+   * Helper to run extract-timing command with a mock Playwright report.
+   * Creates a shard file containing all expected test IDs so filtering passes through.
    */
   function runExtractTiming(
     report: PlaywrightReport,
     project = 'default',
+    shardTestIds?: string[],
   ): ShardTimingArtifact {
     const tmpDir = fs.mkdtempSync(
       path.join(os.tmpdir(), 'extract-timing-test-'),
     );
     const reportPath = path.join(tmpDir, 'results.json');
     const outputPath = path.join(tmpDir, 'timing.json');
+    const shardFilePath = path.join(tmpDir, 'shard.json');
 
     try {
       fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
-      // Build and run the command
+      // Create shard file with all test IDs (or provided subset)
+      const ids = shardTestIds ?? collectAllTestIds(report);
+      fs.writeFileSync(shardFilePath, JSON.stringify(ids));
+
       execSync('bun run build', { cwd: process.cwd(), stdio: 'pipe' });
       execSync(
-        `node ./bin/run.js extract-timing --report-file "${reportPath}" --output-file "${outputPath}" --shard 1 --project "${project}"`,
+        `node ./bin/run.js extract-timing --report-file "${reportPath}" --output-file "${outputPath}" --shard 1 --project "${project}" --shard-file "${shardFilePath}"`,
         { cwd: process.cwd(), stdio: 'pipe' },
       );
 
       const output = fs.readFileSync(outputPath, 'utf-8');
       return JSON.parse(output) as ShardTimingArtifact;
     } finally {
-      // Cleanup
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * Collect all test IDs from a report (for shard file passthrough).
+   * Mirrors the extract-timing logic: file relative to testDir + describe chain + spec title.
+   */
+  function collectAllTestIds(report: PlaywrightReport): string[] {
+    const ids: string[] = [];
+    const testDir = report.config?.projects?.[0]?.testDir ?? '';
+    const rootDir = report.config?.rootDir ?? '';
+
+    function resolvePath(filePath: string): string {
+      const normalized = filePath.replace(/\\/g, '/');
+      const normalizedTestDir = testDir.replace(/\\/g, '/');
+      const normalizedRootDir = rootDir.replace(/\\/g, '/');
+      const abs = path.isAbsolute(normalized)
+        ? normalized
+        : path.join(normalizedRootDir, normalized).replace(/\\/g, '/');
+      const absTestDir = path.isAbsolute(normalizedTestDir)
+        ? normalizedTestDir
+        : path.join(normalizedRootDir, normalizedTestDir).replace(/\\/g, '/');
+      const rel = path.relative(absTestDir, abs).replace(/\\/g, '/');
+      return rel.startsWith('../') ? path.basename(filePath) : rel;
+    }
+
+    function walk(
+      suite: PlaywrightReport['suites'][0],
+      titles: string[],
+      isRoot: boolean,
+    ) {
+      const cur = !isRoot && suite.title ? [...titles, suite.title] : titles;
+      if (suite.specs) {
+        for (const spec of suite.specs) {
+          const file = resolvePath(suite.file);
+          ids.push([file, ...cur, spec.title].join('::'));
+        }
+      }
+      if (suite.suites) {
+        for (const s of suite.suites) {
+          walk({ ...s, file: s.file || suite.file }, cur, false);
+        }
+      }
+    }
+
+    for (const suite of report.suites) {
+      walk(suite, [], true);
+    }
+    return ids;
   }
 
   describe('BUG: Root suite title should be excluded from titlePath', () => {
@@ -326,6 +379,69 @@ describe('Extract Timing Command', () => {
 
       const testIds = Object.keys(result.tests);
       expect(testIds[0]).toBe(expectedTestId);
+    });
+  });
+
+  describe('--shard-file filtering', () => {
+    const reportWith4Tests: PlaywrightReport = {
+      config: {
+        rootDir: '/project',
+        projects: [{ name: 'default', testDir: '/project/tests' }],
+      },
+      suites: [
+        {
+          title: 'a.spec.ts',
+          file: '/project/tests/a.spec.ts',
+          suites: [
+            {
+              title: 'A',
+              file: '/project/tests/a.spec.ts',
+              specs: [
+                {
+                  title: 'test 1',
+                  tests: [{ results: [{ duration: 100, status: 'passed' }] }],
+                },
+                {
+                  title: 'test 2',
+                  tests: [{ results: [{ duration: 200, status: 'passed' }] }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          title: 'b.spec.ts',
+          file: '/project/tests/b.spec.ts',
+          suites: [
+            {
+              title: 'B',
+              file: '/project/tests/b.spec.ts',
+              specs: [
+                {
+                  title: 'test 3',
+                  tests: [{ results: [{ duration: 300, status: 'passed' }] }],
+                },
+                {
+                  title: 'test 4',
+                  tests: [{ results: [{ duration: 0, status: 'skipped' }] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    test('filters output to only include tests in shard file', () => {
+      const shardIds = ['a.spec.ts::A::test 1', 'b.spec.ts::B::test 3'];
+      const result = runExtractTiming(reportWith4Tests, 'default', shardIds);
+
+      const testIds = Object.keys(result.tests);
+      expect(testIds).toHaveLength(2);
+      expect(testIds).toContain('a.spec.ts::A::test 1');
+      expect(testIds).toContain('b.spec.ts::B::test 3');
+      expect(testIds).not.toContain('a.spec.ts::A::test 2');
+      expect(testIds).not.toContain('b.spec.ts::B::test 4');
     });
   });
 });
