@@ -13,8 +13,10 @@ inputs:
     required: true
   project:
     description: Playwright project name
-    required: false
-    default: 'default'
+    required: true
+  shard-file:
+    description: Path to shard JSON file — only extract timing for tests in this file
+    required: true
 
 outputs:
   test-count:
@@ -30,6 +32,8 @@ runs:
     - name: Extract timing data
       id: extract
       shell: bash
+      env:
+        SHARD_FILE: ${{ inputs.shard-file }}
       run: |
         if [ ! -f "${{ inputs.report-file }}" ]; then
           echo "::warning::Report file not found: ${{ inputs.report-file }}"
@@ -43,7 +47,8 @@ runs:
           --report-file "${{ inputs.report-file }}" \
           --output-file "${{ inputs.output-file }}" \
           --shard "${{ inputs.shard }}" \
-          --project "${{ inputs.project }}"
+          --project "${{ inputs.project }}" \
+          --shard-file "$SHARD_FILE"
         EXIT_CODE=$?
         set -e
 

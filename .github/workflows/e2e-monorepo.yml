@@ -82,7 +82,6 @@ jobs:
           test-list: examples/monorepo/apps/web/test-list.json
           timing-file: timing-data.json
           shards: 2
-          level: test
 
       - name: Debug orchestrate output
         run: |
@@ -287,17 +286,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results-shard-${{ matrix.shardIndex }}
-          path: examples/monorepo/apps/web/test-results/results.json
+          path: examples/monorepo/apps/web/playwright-report/results.json
           if-no-files-found: ignore
 
-      # Use the REAL extract-timing action
+      # Use the REAL extract-timing action (with shard-file filter)
       - name: Extract timing
         if: success() || failure()
         uses: ./.github/actions/extract-timing
         with:
-          report-file: examples/monorepo/apps/web/test-results/results.json
+          report-file: examples/monorepo/apps/web/playwright-report/results.json
           output-file: timing-shard-${{ matrix.shardIndex }}.json
           shard: ${{ matrix.shardIndex }}
+          project: chromium
+          shard-file: ${{ steps.shard.outputs.shard-file }}
 
       # CRITICAL: Validate timing artifact test ID format
       # This catches the bug where:
@@ -354,6 +355,99 @@ jobs:
           
           echo "✓ No path mismatch or duplicate filename bugs detected in timing artifact"
 
+      # Validate that the JSON report was filtered by the reporter's onExit
+      - name: Validate report filtered by orchestrator reporter
+        if: success() || failure()
+        working-directory: examples/monorepo/apps/web
+        run: |
+          echo "=== Validating Report Was Filtered ==="
+
+          if [ ! -f "playwright-report/results.json" ]; then
+            echo "No results.json found, skipping"
+            exit 0
+          fi
+
+          SHARD_FILE="${{ steps.shard.outputs.shard-file }}"
+          if [ -z "$SHARD_FILE" ] || [ ! -f "$SHARD_FILE" ]; then
+            echo "No shard file, skipping validation"
+            exit 0
+          fi
+
+          ASSIGNED_COUNT=$(cat "$SHARD_FILE" | jq 'length')
+
+          TOTAL_IN_REPORT=$(cat playwright-report/results.json | jq '
+            [.. | .specs? // empty | .[] | .title] | length
+          ')
+
+          echo "Tests assigned to this shard: $ASSIGNED_COUNT"
+          echo "Total test specs in results.json: $TOTAL_IN_REPORT"
+
+          if [ "$TOTAL_IN_REPORT" -gt "$ASSIGNED_COUNT" ]; then
+            LEAKED=$((TOTAL_IN_REPORT - ASSIGNED_COUNT))
+            echo "::error::FIX FAILED: results.json still contains $LEAKED tests beyond the $ASSIGNED_COUNT assigned to this shard"
+            echo "::error::The reporter's filterJson option did not filter orchestrator-skipped tests"
+            exit 1
+          fi
+
+          echo "✓ Report filtered correctly: $TOTAL_IN_REPORT specs (assigned: $ASSIGNED_COUNT)"
+
+      # Validate that timing artifact has NO orchestrator-skipped entries (fix applied)
+      - name: Validate timing artifact has no orchestrator-skipped tests
+        if: success() || failure()
+        run: |
+          echo "=== Validating Timing Artifact Is Clean ==="
+
+          TIMING_FILE="timing-shard-${{ matrix.shardIndex }}.json"
+          SHARD_FILE="${{ steps.shard.outputs.shard-file }}"
+
+          if [ ! -f "$TIMING_FILE" ] || [ -z "$SHARD_FILE" ] || [ ! -f "$SHARD_FILE" ]; then
+            echo "Missing timing artifact or shard file, skipping"
+            exit 0
+          fi
+
+          TOTAL_TIMING_ENTRIES=$(cat "$TIMING_FILE" | jq '.tests | length')
+          ASSIGNED_COUNT=$(cat "$SHARD_FILE" | jq 'length')
+
+          echo "Timing entries in artifact: $TOTAL_TIMING_ENTRIES"
+          echo "Tests assigned to this shard: $ASSIGNED_COUNT"
+
+          NON_SHARD_TOTAL=$(jq --slurpfile shard "$SHARD_FILE" '
+            ($shard[0] | map({(.): true}) | add // {}) as $allowed |
+            [.tests | to_entries[] | select($allowed[.key] | not)] | length
+          ' "$TIMING_FILE")
+
+          echo "Timing entries NOT in shard file: $NON_SHARD_TOTAL"
+
+          if [ "$NON_SHARD_TOTAL" -gt 0 ]; then
+            echo "::error::FIX FAILED: Timing artifact still contains $NON_SHARD_TOTAL entries for tests NOT in the shard file"
+            jq --slurpfile shard "$SHARD_FILE" '
+              ($shard[0] | map({(.): true}) | add // {}) as $allowed |
+              [.tests | to_entries[] | select($allowed[.key] | not)] | .[:5][] | .key
+            ' "$TIMING_FILE"
+            exit 1
+          fi
+
+          echo "✓ Timing artifact is clean: $TOTAL_TIMING_ENTRIES entries, all from shard assignment"
+
+      # Rename blob report to avoid filename collision during merge
+      - name: Rename blob report for unique naming
+        if: success() || failure()
+        working-directory: examples/monorepo/apps/web/blob-report
+        run: |
+          for f in *.zip; do
+            [ -f "$f" ] && mv "$f" "${f%.zip}-${{ matrix.shardIndex }}.zip"
+          done
+
+      - name: Upload blob report
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-${{ matrix.shardIndex }}
+          path: examples/monorepo/apps/web/blob-report
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
+
       - name: Upload timing artifact
         if: success() || failure()
         uses: actions/upload-artifact@v4
@@ -362,10 +456,147 @@ jobs:
           path: timing-shard-${{ matrix.shardIndex }}.json
           if-no-files-found: ignore
 
-  # Job 4: Merge timing data using the real action
-  merge:
+  # Job 4: Merge blob reports and validate report pollution
+  merge-reports:
     needs: [setup, e2e-tests]
-    if: success() || failure()
+    if: ${{ success() || failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-tarball
+
+      - name: Install monorepo dependencies (for Playwright merge-reports)
+        working-directory: examples/monorepo/apps/web
+        run: |
+          cp $GITHUB_WORKSPACE/nsxbet-playwright-orchestrator-*.tgz .
+          npm install
+          npm install ./nsxbet-playwright-orchestrator-*.tgz
+
+      - name: Download blob reports from all shards
+        uses: actions/download-artifact@v4
+        with:
+          path: examples/monorepo/apps/web/all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+
+      - name: Check for blob reports
+        id: check-blobs
+        working-directory: examples/monorepo/apps/web
+        run: |
+          if [ -z "$(ls -A all-blob-reports 2>/dev/null)" ]; then
+            echo "::warning::No blob reports found, skipping merge"
+            echo "has-blobs=false" >> $GITHUB_OUTPUT
+          else
+            echo "has-blobs=true" >> $GITHUB_OUTPUT
+          fi
+
+      # Merge into HTML report (mirrors bet-client)
+      - name: Merge into HTML Report
+        if: steps.check-blobs.outputs.has-blobs == 'true'
+        working-directory: examples/monorepo/apps/web
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+
+      - name: Upload HTML report
+        if: steps.check-blobs.outputs.has-blobs == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report
+          path: examples/monorepo/apps/web/playwright-report
+          retention-days: 1
+
+      # Merge into JSON report (mirrors bet-client)
+      - name: Merge into JSON Report
+        if: steps.check-blobs.outputs.has-blobs == 'true'
+        working-directory: examples/monorepo/apps/web
+        run: |
+          mkdir -p merged-report
+          npx playwright merge-reports --reporter json ./all-blob-reports > merged-report/results.json
+          echo "Merged report created: $(wc -c < merged-report/results.json) bytes"
+
+      - name: Install CLI globally from tarball
+        if: steps.check-blobs.outputs.has-blobs == 'true'
+        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+
+      # Use the REAL filter-report action on merged report
+      - name: Filter merged report
+        if: steps.check-blobs.outputs.has-blobs == 'true'
+        uses: ./.github/actions/filter-report
+        with:
+          report-file: examples/monorepo/apps/web/merged-report/results.json
+
+      - name: Validate merged report has no orchestrator-skipped tests
+        if: steps.check-blobs.outputs.has-blobs == 'true'
+        working-directory: examples/monorepo/apps/web
+        run: |
+          echo "=== Validating Merged Report Is Clean ==="
+
+          ORCHESTRATOR_SKIPPED=$(cat merged-report/results.json | jq '
+            [.. | .tests? // empty | .[] |
+              select(.status == "skipped") |
+              select(.annotations[]?.description == "Not in shard")
+            ] | length
+          ')
+
+          TOTAL_SKIPPED=$(cat merged-report/results.json | jq '
+            [.. | .tests? // empty | .[] | select(.status == "skipped")] | length
+          ')
+
+          echo "Total skipped in merged report: $TOTAL_SKIPPED"
+          echo "Orchestrator-skipped remaining: $ORCHESTRATOR_SKIPPED"
+
+          if [ "$ORCHESTRATOR_SKIPPED" -gt 0 ]; then
+            echo "::error::FIX FAILED: Merged report still has $ORCHESTRATOR_SKIPPED orchestrator-skipped entries after filter-report"
+            exit 1
+          fi
+
+          echo "✓ Merged report is clean: no orchestrator-skipped tests remain (genuine skipped: $TOTAL_SKIPPED)"
+
+      - name: Check merged report for duplicate entries
+        if: steps.check-blobs.outputs.has-blobs == 'true'
+        working-directory: examples/monorepo/apps/web
+        run: |
+          echo "=== Checking Merged Report For Duplicates ==="
+
+          TOTAL_SPECS=$(cat merged-report/results.json | jq '
+            [.. | .specs? // empty | .[] | .title] | length
+          ')
+
+          UNIQUE_SPECS=$(cat merged-report/results.json | jq '
+            [.. | .specs? // empty | .[] | .title] | unique | length
+          ')
+
+          echo "Total spec entries: $TOTAL_SPECS"
+          echo "Unique spec titles: $UNIQUE_SPECS"
+
+          if [ "$TOTAL_SPECS" -gt "$UNIQUE_SPECS" ]; then
+            EXTRA=$((TOTAL_SPECS - UNIQUE_SPECS))
+            echo "::warning::Merged report has $EXTRA duplicate spec entries (expected for genuinely skipped tests that appear in both shards' blobs without the 'Not in shard' annotation)"
+          else
+            echo "✓ No duplicate entries in merged report"
+          fi
+
+      - name: Playwright report summary
+        if: steps.check-blobs.outputs.has-blobs == 'true'
+        uses: nsx-actions/daun_playwright-report-summary@v3
+        with:
+          report-file: examples/monorepo/apps/web/merged-report/results.json
+
+      - name: Upload merged JSON report
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-report
+          path: examples/monorepo/apps/web/merged-report/results.json
+          retention-days: 1
+          if-no-files-found: ignore
+
+  # Job 5: Merge timing data using the real action
+  merge:
+    needs: [setup, e2e-tests, merge-reports]
+    if: ${{ success() || failure() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -441,7 +672,6 @@ jobs:
             --test-list test-list.json \
             --timing-file playwright-timing.json \
             --shards 2 \
-            --level test \
             --output-format json)
           
           echo "=== Assign Output ==="

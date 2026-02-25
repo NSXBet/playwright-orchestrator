@@ -31,7 +31,12 @@ export default class ExtractTiming extends Command {
     project: Flags.string({
       char: 'p',
       description: 'Playwright project name',
-      default: 'default',
+      required: true,
+    }),
+    'shard-file': Flags.string({
+      description:
+        'Path to shard JSON file — only extract timing for tests in this file',
+      required: true,
     }),
     verbose: Flags.boolean({
       char: 'v',
@@ -71,6 +76,37 @@ export default class ExtractTiming extends Command {
 
     // Extract test-level durations
     const testDurations = this.extractTestDurations(report);
+
+    // Filter by shard file (required)
+    const shardFilePath = path.resolve(flags['shard-file']);
+    if (!fs.existsSync(shardFilePath)) {
+      this.error(`Shard file not found: ${shardFilePath}`);
+    }
+
+    let shardIds: unknown;
+    try {
+      shardIds = JSON.parse(fs.readFileSync(shardFilePath, 'utf-8'));
+    } catch {
+      this.error(`Failed to parse shard file: ${shardFilePath}`);
+    }
+    if (!Array.isArray(shardIds)) {
+      this.error(`Shard file must contain a JSON array: ${shardFilePath}`);
+    }
+    const allowed = new Set(shardIds as string[]);
+    const beforeCount = Object.keys(testDurations).length;
+
+    for (const testId of Object.keys(testDurations)) {
+      if (!allowed.has(testId)) {
+        delete testDurations[testId];
+      }
+    }
+
+    if (flags.verbose) {
+      const afterCount = Object.keys(testDurations).length;
+      this.log(
+        `Filtered by shard file: ${beforeCount} → ${afterCount} tests (removed ${beforeCount - afterCount})`,
+      );
+    }
 
     if (flags.verbose) {
       this.log(

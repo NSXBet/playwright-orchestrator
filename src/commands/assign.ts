@@ -1,18 +1,9 @@
 import * as path from 'node:path';
 import { Command, Flags } from '@oclif/core';
-import { glob } from 'glob';
 import {
   assignWithCKK,
-  assignWithLPT,
   DEFAULT_CKK_TIMEOUT,
-  DEFAULT_MS_PER_LINE,
   type DiscoveredTest,
-  discoverTests,
-  discoverTestsFromFiles,
-  estimateDuration,
-  type FileWithDuration,
-  formatAssignResult,
-  getFileDuration,
   getTestDurations,
   loadTestListFromFile,
   loadTimingData,
@@ -23,23 +14,18 @@ import {
 
 export default class Assign extends Command {
   static override description =
-    'Assign test files or tests to shards based on historical timing data';
+    'Assign tests to shards based on historical timing data';
 
   static override examples = [
-    '<%= config.bin %> assign --test-dir ./src/test/e2e --shards 4',
-    '<%= config.bin %> assign --test-dir ./e2e --timing-file ./timing.json --shards 4 --output-format json',
-    '<%= config.bin %> assign --test-dir ./e2e --shards 4 --level test --timeout 500',
+    '<%= config.bin %> assign --test-list ./test-list.json --shards 4',
+    '<%= config.bin %> assign --test-list ./test-list.json --timing-file ./timing.json --shards 4 --output-format json',
   ];
 
   static override flags = {
-    'test-dir': Flags.string({
-      char: 'd',
-      description: 'Path to test directory containing spec files',
-      required: false, // Not required when using --test-list
-    }),
     'test-list': Flags.string({
       description:
-        'Path to JSON file with test list (from playwright --list --reporter=json). When provided, skips test discovery.',
+        'Path to JSON file with test list (from npx playwright test --list --reporter=json)',
+      required: true,
     }),
     'timing-file': Flags.string({
       char: 't',
@@ -52,7 +38,7 @@ export default class Assign extends Command {
     }),
     project: Flags.string({
       char: 'p',
-      description: 'Playwright project name (for accurate test discovery)',
+      description: 'Playwright project name (for multi-project configs)',
     }),
     'output-format': Flags.string({
       char: 'f',
@@ -60,125 +46,33 @@ export default class Assign extends Command {
       default: 'json',
       options: ['json', 'text'],
     }),
-    'fallback-ms-per-line': Flags.integer({
-      description: 'Milliseconds per line for duration estimation',
-      default: DEFAULT_MS_PER_LINE,
-    }),
     verbose: Flags.boolean({
       char: 'v',
       description: 'Show verbose output',
       default: false,
     }),
-    'glob-pattern': Flags.string({
-      description: 'Glob pattern for test files',
-      default: '**/*.spec.ts',
-    }),
-    level: Flags.string({
-      char: 'l',
-      description: 'Distribution level: file or test',
-      default: 'test',
-      options: ['file', 'test'],
-    }),
     timeout: Flags.integer({
-      description: 'CKK algorithm timeout in milliseconds (test-level only)',
+      description: 'CKK algorithm timeout in milliseconds',
       default: DEFAULT_CKK_TIMEOUT,
-    }),
-    'use-fallback': Flags.boolean({
-      description:
-        'Use file parsing instead of Playwright --list for test discovery',
-      default: false,
-    }),
-    'config-dir': Flags.string({
-      char: 'c',
-      description:
-        'Directory where playwright.config.ts is located (defaults to test-dir)',
     }),
   };
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Assign);
 
-    // Validate that either test-dir or test-list is provided
-    if (!flags['test-dir'] && !flags['test-list']) {
-      this.error('Either --test-dir or --test-list must be provided');
-    }
+    const testListPath = path.resolve(flags['test-list']);
+    const tests: DiscoveredTest[] = loadTestListFromFile(
+      testListPath,
+      flags.project,
+    );
 
-    const testDir = flags['test-dir'] ? path.resolve(flags['test-dir']) : '';
-    const pattern = flags['glob-pattern'];
-
-    if (flags.level === 'test') {
-      await this.runTestLevel(testDir, pattern, {
-        ...flags,
-        project: flags.project,
-        'use-fallback': flags['use-fallback'],
-        'config-dir': flags['config-dir'],
-        'test-list': flags['test-list'],
-      });
-    } else {
-      if (flags['test-list']) {
-        this.error('--test-list is only supported with --level test');
-      }
-      await this.runFileLevel(testDir, pattern, flags);
-    }
-  }
-
-  private async runTestLevel(
-    testDir: string,
-    pattern: string,
-    flags: {
-      shards: number;
-      'timing-file'?: string;
-      'output-format': string;
-      verbose: boolean;
-      timeout: number;
-      'glob-pattern': string;
-      project?: string;
-      'use-fallback': boolean;
-      'config-dir'?: string;
-      'test-list'?: string;
-    },
-  ): Promise<void> {
-    // Discover tests - prefer pre-generated test list, then Playwright --list, then file parsing
-    let tests: DiscoveredTest[];
-
-    if (flags['test-list']) {
-      // Use pre-generated test list file (most reliable in CI)
-      const testListPath = path.resolve(flags['test-list']);
-      tests = loadTestListFromFile(testListPath, flags.project);
-      if (flags.verbose) {
-        this.log(`Using pre-generated test list from ${testListPath}`);
-      }
-    } else if (flags['use-fallback']) {
-      // Explicit fallback requested
-      tests = discoverTestsFromFiles(testDir, pattern);
-      if (flags.verbose) {
-        this.log('Using file parsing for test discovery (--use-fallback)');
-      }
-    } else {
-      try {
-        // Try Playwright --list first (handles parameterized tests correctly)
-        // Use config-dir if provided, otherwise use test-dir
-        tests = discoverTests(testDir, flags.project, flags['config-dir']);
-        if (flags.verbose) {
-          this.log(
-            'Using Playwright --list for test discovery (accurate, includes parameterized tests)',
-          );
-        }
-      } catch {
-        // Fallback to file parsing if Playwright --list fails
-        if (flags.verbose) {
-          this.warn(
-            'Playwright --list failed, falling back to file parsing (may miss parameterized tests)',
-          );
-        }
-        tests = discoverTestsFromFiles(testDir, pattern);
-      }
+    if (flags.verbose) {
+      this.log(`Loaded ${tests.length} tests from ${testListPath}`);
     }
 
     if (tests.length === 0) {
-      const source = flags['test-list'] || `${testDir} matching ${pattern}`;
-      this.warn(`No tests found in ${source}`);
-      this.outputTestResult(
+      this.warn(`No tests found in ${testListPath}`);
+      this.outputResult(
         {
           shards: Object.fromEntries(
             Array.from({ length: flags.shards }, (_, i) => [i + 1, []]),
@@ -195,17 +89,11 @@ export default class Assign extends Command {
       return;
     }
 
-    if (flags.verbose) {
-      this.log(`Found ${tests.length} tests in ${testDir}`);
-    }
-
-    // Load timing data if available
     let timingData: TimingData | null = null;
     if (flags['timing-file']) {
       timingData = loadTimingData(flags['timing-file']);
     }
 
-    // Get test durations
     const testsWithDurations = getTestDurations(tests, timingData);
     const estimatedTests = testsWithDurations
       .filter((t) => t.estimated)
@@ -217,7 +105,6 @@ export default class Assign extends Command {
       );
     }
 
-    // Convert to TestWithDuration format
     const testInputs: TestWithDuration[] = testsWithDurations.map((t) => ({
       testId: t.testId,
       file: t.file,
@@ -225,7 +112,6 @@ export default class Assign extends Command {
       estimated: t.estimated,
     }));
 
-    // Run CKK algorithm
     const ckkResult = assignWithCKK(testInputs, flags.shards, flags.timeout);
 
     if (flags.verbose) {
@@ -235,13 +121,11 @@ export default class Assign extends Command {
       this.log(`Makespan: ${this.formatDuration(ckkResult.makespan)}`);
     }
 
-    // Build shard assignments
     const shardTests: Record<number, string[]> = {};
     for (const assignment of ckkResult.assignments) {
       shardTests[assignment.shardIndex] = assignment.tests;
     }
 
-    // Build result
     const result: TestAssignResult = {
       shards: shardTests,
       expectedDurations: Object.fromEntries(
@@ -252,99 +136,10 @@ export default class Assign extends Command {
       isOptimal: ckkResult.isOptimal,
     };
 
-    this.outputTestResult(result, flags['output-format'], flags.verbose);
-  }
-
-  private async runFileLevel(
-    testDir: string,
-    pattern: string,
-    flags: {
-      shards: number;
-      'timing-file'?: string;
-      'output-format': string;
-      verbose: boolean;
-      'fallback-ms-per-line': number;
-    },
-  ): Promise<void> {
-    // Find all test files
-    const testFiles = await glob(pattern, {
-      cwd: testDir,
-      nodir: true,
-    });
-
-    if (testFiles.length === 0) {
-      this.warn(`No test files found in ${testDir} matching ${pattern}`);
-      this.outputResult(
-        {
-          shards: Object.fromEntries(
-            Array.from({ length: flags.shards }, (_, i) => [i + 1, []]),
-          ),
-          expectedDurations: Object.fromEntries(
-            Array.from({ length: flags.shards }, (_, i) => [i + 1, 0]),
-          ),
-          totalFiles: 0,
-          estimatedFiles: [],
-        },
-        flags['output-format'],
-      );
-      return;
-    }
-
-    if (flags.verbose) {
-      this.log(`Found ${testFiles.length} test files in ${testDir}`);
-    }
-
-    // Load timing data if available
-    const timingData = flags['timing-file']
-      ? loadTimingData(flags['timing-file'])
-      : null;
-
-    // Build file list with durations
-    const filesWithDurations: FileWithDuration[] = [];
-    const estimatedFiles: string[] = [];
-
-    for (const file of testFiles) {
-      const historicalDuration = timingData
-        ? getFileDuration(timingData, file)
-        : undefined;
-
-      if (historicalDuration !== undefined) {
-        filesWithDurations.push({
-          file,
-          duration: historicalDuration,
-          estimated: false,
-        });
-      } else {
-        // Estimate based on line count
-        const fullPath = path.join(testDir, file);
-        const estimated = estimateDuration(
-          fullPath,
-          flags['fallback-ms-per-line'],
-        );
-        filesWithDurations.push({
-          file,
-          duration: estimated,
-          estimated: true,
-        });
-        estimatedFiles.push(file);
-      }
-    }
-
-    if (flags.verbose && estimatedFiles.length > 0) {
-      this.log(
-        `Estimated duration for ${estimatedFiles.length} files (no historical data)`,
-      );
-    }
-
-    // Run LPT algorithm
-    const assignments = assignWithLPT(filesWithDurations, flags.shards);
-    const result = formatAssignResult(assignments, estimatedFiles);
-
-    // Output result
     this.outputResult(result, flags['output-format'], flags.verbose);
   }
 
-  private outputTestResult(
+  private outputResult(
     result: TestAssignResult,
     format: string,
     verbose = false,
@@ -352,8 +147,7 @@ export default class Assign extends Command {
     if (format === 'json') {
       this.log(JSON.stringify(result));
     } else {
-      // Text format
-      this.log('\n=== Shard Assignments (Test-Level) ===\n');
+      this.log('\n=== Shard Assignments ===\n');
       for (const [shard, tests] of Object.entries(result.shards)) {
         const duration = result.expectedDurations[Number(shard)];
         const durationStr = this.formatDuration(duration ?? 0);
@@ -374,35 +168,6 @@ export default class Assign extends Command {
       if (result.estimatedTests.length > 0) {
         this.log(
           `Tests with estimated duration: ${result.estimatedTests.length}`,
-        );
-      }
-    }
-  }
-
-  private outputResult(
-    result: ReturnType<typeof formatAssignResult>,
-    format: string,
-    _verbose = false,
-  ): void {
-    if (format === 'json') {
-      this.log(JSON.stringify(result));
-    } else {
-      // Text format
-      this.log('\n=== Shard Assignments (File-Level) ===\n');
-      for (const [shard, files] of Object.entries(result.shards)) {
-        const duration = result.expectedDurations[Number(shard)];
-        const durationStr = this.formatDuration(duration ?? 0);
-        this.log(`Shard ${shard} (${durationStr}):`);
-        for (const file of files) {
-          const isEstimated = result.estimatedFiles.includes(file);
-          this.log(`  - ${file}${isEstimated ? ' (estimated)' : ''}`);
-        }
-        this.log('');
-      }
-      this.log(`Total files: ${result.totalFiles}`);
-      if (result.estimatedFiles.length > 0) {
-        this.log(
-          `Files with estimated duration: ${result.estimatedFiles.length}`,
         );
       }
     }

@@ -6,13 +6,14 @@ This guide explains how to integrate the playwright-orchestrator into your own G
 
 The orchestrator provides GitHub Actions that you can reference directly in your workflows:
 
-| Action               | Purpose                                                |
-| -------------------- | ------------------------------------------------------ |
-| `setup-orchestrator` | Install and cache the CLI                              |
-| `orchestrate`        | Assign tests to shards (outputs `shard-files` JSON)    |
-| `get-shard`          | Extract `shard-file` path for reporter-based filtering |
-| `extract-timing`     | Extract timing from Playwright reports                 |
-| `merge-timing`       | Merge timing data from multiple shards                 |
+| Action               | Purpose                                                        |
+| -------------------- | -------------------------------------------------------------- |
+| `setup-orchestrator` | Install and cache the CLI                                      |
+| `orchestrate`        | Assign tests to shards (outputs `shard-files` JSON)            |
+| `get-shard`          | Extract `shard-file` path for reporter-based filtering         |
+| `extract-timing`     | Extract timing from Playwright reports (requires shard-file and project) |
+| `merge-timing`       | Merge timing data from multiple shards                         |
+| `filter-report`      | Remove orchestrator-skipped tests from merged JSON report      |
 
 ## Versioning
 
@@ -364,16 +365,30 @@ Extracts shard-file path for a specific shard.
 
 ### extract-timing
 
-Extracts timing from Playwright reports.
+Extracts timing from Playwright reports. Requires a shard file and project name to ensure only shard-relevant tests are included in timing output.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
+- uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v1
   with:
     report-file: ./results.json # Required: Playwright JSON report
     output-file: ./timing.json # Required: output path
     shard: 1 # Required: shard index
-    project: default # Optional: Playwright project
+    project: chromium # Required: Playwright project name
+    shard-file: ${{ steps.shard.outputs.shard-file }} # Required: shard JSON file
 ```
+
+### filter-report
+
+Removes orchestrator-skipped tests from a Playwright JSON report. Useful for cleaning merged reports (from `playwright merge-reports`) where per-shard `filterJson` doesn't help because blob reports still contain all tests.
+
+```yaml
+- uses: NSXBet/playwright-orchestrator/.github/actions/filter-report@v0
+  with:
+    report-file: ./merged-report/results.json # Required: JSON report to filter
+    output-file: ./merged-report/results.json # Optional: defaults to overwriting input
+```
+
+Identifies orchestrator-skipped tests by the annotation `{type: "skip", description: "Not in shard"}` and removes specs where ALL tests have this annotation.
 
 ### merge-timing
 

@@ -63,7 +63,9 @@ ORCHESTRATOR_SHARD_FILE=shard-1.json bunx playwright test --project "Mobile Chro
 # Extract timing from report after tests complete
 bunx playwright-orchestrator extract-timing \
   --report-file ./playwright-report/results.json \
-  --output-file ./shard-1-timing.json
+  --output-file ./shard-1-timing.json \
+  --shard-file ./shard-1.json \
+  --project "Mobile Chrome"
 
 # Merge timing data from all shards
 bunx playwright-orchestrator merge-timing \
@@ -99,9 +101,17 @@ For test-level distribution to work, you need **two things**:
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  reporter: [["@nsxbet/playwright-orchestrator/reporter"], ["html"]],
+  reporter: [
+    ["@nsxbet/playwright-orchestrator/reporter", {
+      filterJson: "playwright-report/results.json",
+    }],
+    ["json", { outputFile: "playwright-report/results.json" }],
+    ["html"],
+  ],
 });
 ```
+
+The `filterJson` option (optional) tells the reporter to rewrite the JSON report after tests complete, removing specs not assigned to this shard. This keeps per-shard reports clean and prevents timing corruption from zero-duration orchestrator-skipped entries.
 
 ### 2. Test Fixture (in your test setup file)
 
@@ -223,11 +233,12 @@ See [docs/external-integration.md](./docs/external-integration.md) for complete 
 
 ## CLI Commands
 
-| Command          | Description                              |
-| ---------------- | ---------------------------------------- |
-| `assign`         | Distribute tests across shards           |
-| `extract-timing` | Extract timing from Playwright report    |
-| `merge-timing`   | Merge timing data with EMA smoothing     |
+| Command          | Description                                               |
+| ---------------- | --------------------------------------------------------- |
+| `assign`         | Distribute tests across shards                            |
+| `extract-timing` | Extract timing from Playwright report                     |
+| `merge-timing`   | Merge timing data with EMA smoothing                      |
+| `filter-report`  | Remove orchestrator-skipped tests from merged JSON report |
 
 Run `playwright-orchestrator <command> --help` for details.
 

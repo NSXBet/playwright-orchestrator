@@ -170,55 +170,6 @@ export function withOrchestratorFilter<T extends object, W extends object>(
 }
 
 /**
- * @deprecated Use `withOrchestratorFilter` instead. This function uses beforeEach
- * which only works for the first test file processed, not subsequent files.
- *
- * Sets up the orchestrator filter as a beforeEach hook.
- * This will skip tests that are not in the current shard.
- *
- * @param test - The test object from @playwright/test
- */
-export function setupOrchestratorFilter<T extends object, W extends object>(
-  test: TestType<T, W>,
-): void {
-  // biome-ignore lint/correctness/noEmptyPattern: Playwright requires empty destructuring for fixtures
-  test.beforeEach(async ({}, testInfo) => {
-    const allowedTestIds = loadShardFile();
-
-    if (allowedTestIds) {
-      // CRITICAL: Use project.testDir for consistent path resolution with test-discovery
-      // No fallback to process.cwd() - this causes path mismatch bugs
-      const testDir = testInfo.project.testDir;
-
-      if (!testDir) {
-        throw new Error(
-          '[Orchestrator Fixture] Could not determine project testDir. ' +
-            'Ensure your playwright.config.ts has projects configured with testDir.',
-        );
-      }
-
-      const testId = buildTestIdFromRuntime(testInfo.file, testInfo.titlePath, {
-        projectName: testInfo.project.name,
-        baseDir: testDir,
-      });
-
-      const isAllowed = allowedTestIds.has(testId);
-
-      // Debug: Write to stderr for visibility in CI logs
-      if (process.env.ORCHESTRATOR_DEBUG === '1') {
-        process.stderr.write(
-          `[Fixture] testDir=${testInfo.project.testDir} | testId=${testId} | allowed=${isAllowed}\n`,
-        );
-      }
-
-      if (!isAllowed) {
-        test.skip(true, 'Not in shard');
-      }
-    }
-  });
-}
-
-/**
  * Check if a test should run based on the shard file.
  * Can be called manually in individual tests.
  *

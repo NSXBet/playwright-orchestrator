@@ -182,12 +182,21 @@ To run only specific tests in a shard, the orchestrator outputs a JSON file with
 
 ```typescript
 // playwright.config.ts
-reporter: [['@nsxbet/playwright-orchestrator/reporter'], ['html']]
+reporter: [
+  ['@nsxbet/playwright-orchestrator/reporter', {
+    filterJson: 'playwright-report/results.json',
+  }],
+  ['json', { outputFile: 'playwright-report/results.json' }],
+  ['html'],
+]
 ```
 
+**Reporter options:**
+- `filterJson` (optional): Path to the JSON report file. When set, the reporter rewrites the JSON report in `onExit`, removing specs not assigned to this shard (using test-ID matching against the shard file) and recalculating `.stats`. This prevents timing corruption and report pollution.
+
 **Test ID Format**: `{relative-path}::{describe}::{test-title}`
-- Path is relative to Playwright's `rootDir` (from config), with forward slashes
-- Example: `src/test/e2e/login.spec.ts::Login::should login`
+- Path is relative to Playwright's `project.testDir` (NOT `config.rootDir`), with forward slashes
+- Example: `login.spec.ts::Login::should login`
 
 This approach was chosen because:
 - `--grep` has substring collision issues
@@ -415,8 +424,9 @@ See [docs/external-integration.md](./docs/external-integration.md#cache-strategy
 | `setup-orchestrator` | Install and cache the CLI |
 | `orchestrate` | Assign tests to shards (outputs `shard-files` JSON) |
 | `get-shard` | Extract `shard-file` path for reporter-based filtering |
-| `extract-timing` | Extract timing from Playwright reports |
+| `extract-timing` | Extract timing from Playwright reports (requires `shard-file` and `project`) |
 | `merge-timing` | Merge timing data with EMA smoothing |
+| `filter-report` | Remove orchestrator-skipped tests from merged JSON report |
 
 ### Test Discovery
 
