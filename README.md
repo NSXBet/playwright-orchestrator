@@ -242,6 +242,20 @@ See [docs/external-integration.md](./docs/external-integration.md) for complete 
 
 Run `playwright-orchestrator <command> --help` for details.
 
+### File Affinity
+
+By default, the `assign` command keeps tests from the same file on the same shard when the time difference is small. This reduces redundant page/context initialization costs in frameworks like Next.js where the first test on a page pays a "footprint" cost.
+
+The penalty is auto-calculated from timing data (P25 of per-file average durations). You can override or disable it:
+
+```bash
+# Disable file affinity
+playwright-orchestrator assign --test-list test-list.json --shards 4 --no-file-affinity
+
+# Override penalty (in ms)
+playwright-orchestrator assign --test-list test-list.json --shards 4 --file-affinity-penalty 20000
+```
+
 ## Development
 
 ```bash

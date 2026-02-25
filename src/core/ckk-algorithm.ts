@@ -36,6 +36,7 @@ export function assignWithCKK(
   tests: TestWithDuration[],
   numShards: number,
   timeoutMs: number = DEFAULT_CKK_TIMEOUT,
+  fileAffinityPenalty = 0,
 ): CKKResult {
   if (tests.length === 0) {
     return {
@@ -54,21 +55,52 @@ export function assignWithCKK(
     return assignOnePerShard(tests, numShards);
   }
 
-  // Sort tests by duration descending for better pruning
-  const sortedTests = [...tests].sort((a, b) => b.duration - a.duration);
+  // Sort tests by duration descending, then by file ascending for better
+  // file-affinity convergence (same-file tests appear adjacent)
+  const sortedTests = [...tests].sort(
+    (a, b) => b.duration - a.duration || a.file.localeCompare(b.file),
+  );
 
-  // Get LPT solution as upper bound
-  const lptResult = assignWithLPTInternal(sortedTests, numShards);
+  // Precompute per-file test counts for penalty amortization
+  const fileTestCounts = new Map<string, number>();
+  for (const test of sortedTests) {
+    fileTestCounts.set(test.file, (fileTestCounts.get(test.file) ?? 0) + 1);
+  }
+
+  // Get LPT solution as upper bound (uses its own copy of fileRemaining)
+  const lptResult = assignWithLPTInternal(
+    sortedTests,
+    numShards,
+    fileAffinityPenalty,
+    fileTestCounts,
+    new Map(fileTestCounts),
+  );
   let bestMakespan = lptResult.makespan;
   let bestAssignment = lptResult.assignments;
   let isOptimal = false;
+
+  // Track remaining unassigned tests per file for CKK search
+  const fileRemaining = new Map<string, number>(fileTestCounts);
 
   // For small inputs, try to find optimal solution
   const startTime = Date.now();
 
   // Branch and bound search
-  const shardLoads = new Array(numShards).fill(0) as number[];
+  // effectiveLoads include penalty; actualLoads are real durations for output
+  const effectiveLoads = new Array(numShards).fill(0) as number[];
+  const actualLoads = new Array(numShards).fill(0) as number[];
   const shardTests: string[][] = Array.from({ length: numShards }, () => []);
+  const shardFiles: Set<string>[] = Array.from(
+    { length: numShards },
+    () => new Set<string>(),
+  );
+
+  function computePenalty(shardIdx: number, file: string): number {
+    if (fileAffinityPenalty <= 0 || shardFiles[shardIdx]?.has(file)) return 0;
+    const total = fileTestCounts.get(file) ?? 1;
+    const remaining = fileRemaining.get(file) ?? 1;
+    return Math.round(fileAffinityPenalty * (remaining / total));
+  }
 
   function search(testIndex: number): boolean {
     // Check timeout
@@ -78,10 +110,10 @@ export function assignWithCKK(
 
     // All tests assigned
     if (testIndex >= sortedTests.length) {
-      const currentMakespan = Math.max(...shardLoads);
+      const currentMakespan = Math.max(...effectiveLoads);
       if (currentMakespan < bestMakespan) {
         bestMakespan = currentMakespan;
-        bestAssignment = shardLoads.map((load, i) => ({
+        bestAssignment = actualLoads.map((load, i) => ({
           shardIndex: i + 1,
           tests: [...(shardTests[i] ?? [])],
           expectedDuration: load,
@@ -95,12 +127,37 @@ export function assignWithCKK(
     if (!test) return true;
 
     // Calculate lower bound: current max + remaining items distributed perfectly
-    const remainingDuration = sortedTests
-      .slice(testIndex)
-      .reduce((sum, t) => sum + t.duration, 0);
-    const currentMax = Math.max(...shardLoads);
+    const remainingTests = sortedTests.slice(testIndex);
+    let remainingDuration = 0;
+    for (const t of remainingTests) {
+      remainingDuration += t.duration;
+    }
+
+    // Account for minimum penalties: each unique file among remaining tests
+    // that isn't on ANY shard yet will require at least one penalty payment
+    let minPenaltyCost = 0;
+    if (fileAffinityPenalty > 0) {
+      const allShardFiles = new Set<string>();
+      for (const files of shardFiles) {
+        for (const f of files) allShardFiles.add(f);
+      }
+      const newFiles = new Set<string>();
+      for (const t of remainingTests) {
+        if (!allShardFiles.has(t.file)) newFiles.add(t.file);
+      }
+      // Each new file incurs at least one amortized penalty
+      for (const file of newFiles) {
+        const total = fileTestCounts.get(file) ?? 1;
+        const remaining = fileRemaining.get(file) ?? 1;
+        minPenaltyCost += Math.round(fileAffinityPenalty * (remaining / total));
+      }
+    }
+
+    const currentMax = Math.max(...effectiveLoads);
     const totalAfter =
-      shardLoads.reduce((sum, l) => sum + l, 0) + remainingDuration;
+      effectiveLoads.reduce((sum, l) => sum + l, 0) +
+      remainingDuration +
+      minPenaltyCost;
     const lowerBound = Math.max(currentMax, Math.ceil(totalAfter / numShards));
 
     // Prune if lower bound exceeds best
@@ -109,44 +166,62 @@ export function assignWithCKK(
     }
 
     // Try assigning to each shard, starting with least loaded
-    const shardOrder = shardLoads
+    const shardOrder = effectiveLoads
       .map((load, i) => ({ load, index: i }))
       .sort((a, b) => a.load - b.load)
       .map((s) => s.index);
 
-    // Skip duplicate loads to avoid redundant exploration
-    const seenLoads = new Set<number>();
+    // Skip duplicate states to avoid redundant exploration.
+    // When penalty > 0, key on load + whether shard has the file,
+    // since two shards with the same load but different file sets are NOT equivalent.
+    const seenStates = new Set<string>();
 
     for (const shardIdx of shardOrder) {
-      const load = shardLoads[shardIdx];
+      const load = effectiveLoads[shardIdx];
       if (load === undefined) continue;
 
-      // Skip if we've already tried a shard with this load
-      if (seenLoads.has(load)) {
+      const hasFile = shardFiles[shardIdx]?.has(test.file) ?? false;
+      const dedupKey =
+        fileAffinityPenalty > 0 ? `${load}:${hasFile}` : `${load}`;
+
+      if (seenStates.has(dedupKey)) {
         continue;
       }
-      seenLoads.add(load);
+      seenStates.add(dedupKey);
+
+      const penalty = computePenalty(shardIdx, test.file);
+      const effectiveCost = test.duration + penalty;
 
       // Prune: if adding to this shard exceeds best makespan, skip
-      if (load + test.duration >= bestMakespan) {
+      if (load + effectiveCost >= bestMakespan) {
         continue;
       }
 
       // Assign test to shard
-      shardLoads[shardIdx] = load + test.duration;
+      effectiveLoads[shardIdx] = load + effectiveCost;
+      actualLoads[shardIdx] = (actualLoads[shardIdx] ?? 0) + test.duration;
+      const isNewFile = !shardFiles[shardIdx]?.has(test.file);
+      shardFiles[shardIdx]?.add(test.file);
       shardTests[shardIdx]?.push(test.testId);
+      fileRemaining.set(test.file, (fileRemaining.get(test.file) ?? 1) - 1);
 
       const completed = search(testIndex + 1);
       if (!completed) {
         // Timeout - restore and return
-        shardLoads[shardIdx] = load;
+        effectiveLoads[shardIdx] = load;
+        actualLoads[shardIdx] = (actualLoads[shardIdx] ?? 0) - test.duration;
+        if (isNewFile) shardFiles[shardIdx]?.delete(test.file);
         shardTests[shardIdx]?.pop();
+        fileRemaining.set(test.file, (fileRemaining.get(test.file) ?? 0) + 1);
         return false;
       }
 
       // Restore state for backtracking
-      shardLoads[shardIdx] = load;
+      effectiveLoads[shardIdx] = load;
+      actualLoads[shardIdx] = (actualLoads[shardIdx] ?? 0) - test.duration;
+      if (isNewFile) shardFiles[shardIdx]?.delete(test.file);
       shardTests[shardIdx]?.pop();
+      fileRemaining.set(test.file, (fileRemaining.get(test.file) ?? 0) + 1);
     }
 
     return true;
@@ -157,19 +232,32 @@ export function assignWithCKK(
     search(0);
   }
 
+  // Return actual makespan (without penalties) for user-facing output
+  const actualMakespan =
+    bestAssignment.length > 0
+      ? Math.max(...bestAssignment.map((a) => a.expectedDuration))
+      : 0;
+
   return {
     assignments: bestAssignment,
-    makespan: bestMakespan,
+    makespan: actualMakespan,
     isOptimal,
   };
 }
 
 /**
- * Simple LPT algorithm for internal use
+ * Simple LPT algorithm for internal use, with optional file affinity penalty.
+ *
+ * When fileAffinityPenalty > 0, effective loads include the penalty for each
+ * new file introduced to a shard. The returned expectedDuration and makespan
+ * reflect effective loads so the CKK search can use them as an upper bound.
  */
 function assignWithLPTInternal(
   sortedTests: TestWithDuration[],
   numShards: number,
+  fileAffinityPenalty = 0,
+  fileTestCounts: Map<string, number> = new Map(),
+  fileRemaining: Map<string, number> = new Map(),
 ): { assignments: TestShardAssignment[]; makespan: number } {
   const shards: TestShardAssignment[] = Array.from(
     { length: numShards },
@@ -180,22 +268,54 @@ function assignWithLPTInternal(
     }),
   );
 
+  // Track effective loads (with penalty) separately from actual durations
+  const effectiveLoads = new Array(numShards).fill(0) as number[];
+  const actualLoads = new Array(numShards).fill(0) as number[];
+  const shardFiles: Set<string>[] = Array.from(
+    { length: numShards },
+    () => new Set<string>(),
+  );
+
   for (const test of sortedTests) {
-    // Find shard with minimum load
-    let minShard = shards[0];
-    for (const shard of shards) {
-      if (minShard && shard.expectedDuration < minShard.expectedDuration) {
-        minShard = shard;
+    // Find shard with minimum effective load after assignment (including penalty)
+    let minIdx = 0;
+    let minCost = Infinity;
+
+    for (let i = 0; i < numShards; i++) {
+      let penalty = 0;
+      if (fileAffinityPenalty > 0 && !shardFiles[i]?.has(test.file)) {
+        const total = fileTestCounts.get(test.file) ?? 1;
+        const remaining = fileRemaining.get(test.file) ?? 1;
+        penalty = Math.round(fileAffinityPenalty * (remaining / total));
+      }
+      const cost = (effectiveLoads[i] ?? 0) + test.duration + penalty;
+      if (cost < minCost) {
+        minCost = cost;
+        minIdx = i;
       }
     }
 
-    if (minShard) {
-      minShard.tests.push(test.testId);
-      minShard.expectedDuration += test.duration;
+    let penalty = 0;
+    if (fileAffinityPenalty > 0 && !shardFiles[minIdx]?.has(test.file)) {
+      const total = fileTestCounts.get(test.file) ?? 1;
+      const remaining = fileRemaining.get(test.file) ?? 1;
+      penalty = Math.round(fileAffinityPenalty * (remaining / total));
+    }
+
+    const shard = shards[minIdx];
+    if (shard) {
+      shard.tests.push(test.testId);
+      effectiveLoads[minIdx] =
+        (effectiveLoads[minIdx] ?? 0) + test.duration + penalty;
+      actualLoads[minIdx] = (actualLoads[minIdx] ?? 0) + test.duration;
+      shard.expectedDuration = actualLoads[minIdx] ?? 0;
+      shardFiles[minIdx]?.add(test.file);
+      fileRemaining.set(test.file, (fileRemaining.get(test.file) ?? 1) - 1);
     }
   }
 
-  const makespan = Math.max(...shards.map((s) => s.expectedDuration));
+  // Makespan uses effective loads so CKK can prune against it
+  const makespan = effectiveLoads.length > 0 ? Math.max(...effectiveLoads) : 0;
 
   return { assignments: shards, makespan };
 }

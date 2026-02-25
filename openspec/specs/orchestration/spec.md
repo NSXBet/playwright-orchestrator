@@ -49,7 +49,7 @@ The system SHALL estimate test duration using a fallback strategy when no histor
 
 ### Requirement: Optimal Test Distribution
 
-The system SHALL distribute tests across shards to minimize the maximum shard duration (makespan).
+The system SHALL distribute tests across shards to minimize the maximum shard duration (makespan), considering file affinity penalties when enabled.
 
 #### Scenario: CKK finds optimal solution
 
@@ -73,6 +73,15 @@ The system SHALL distribute tests across shards to minimize the maximum shard du
 - **AND** 5 shards requested
 - **WHEN** the `assign` command is executed
 - **THEN** the system assigns one test per shard, leaving 2 shards empty
+
+#### Scenario: CKK with file affinity penalty
+
+- **GIVEN** a list of tests with durations
+- **AND** the number of shards
+- **AND** file affinity is enabled with a penalty greater than 0
+- **WHEN** the `assign` command is executed
+- **THEN** the CKK algorithm uses penalty-adjusted effective durations during branch-and-bound search
+- **AND** the output `expectedDurations` reflect actual durations without penalties
 
 ### Requirement: Timing Data Collection
 
@@ -195,7 +204,7 @@ The orchestrator reporter SHALL optionally filter a Playwright JSON report file 
 
 ### Requirement: Report Filtering Command
 
-The system SHALL provide a `filter-report` CLI command that removes orchestrator-skipped tests from a Playwright JSON report, identified by the annotation `"Not in shard"`.
+The system SHALL provide a `filter-report` CLI command that removes orchestrator-skipped tests from a Playwright JSON report, identified by the annotation `"Not in shard"`. The filter SHALL operate at the results level within each test, not just at the spec level.
 
 #### Scenario: Remove orchestrator-skipped tests from merged report
 
@@ -216,6 +225,30 @@ The system SHALL provide a `filter-report` CLI command that removes orchestrator
 - **GIVEN** the `filter-report` command is called without `--output-file`
 - **WHEN** filtering completes
 - **THEN** the input file is overwritten with the filtered report
+
+#### Scenario: Strip orchestrator-skipped results from merged tests
+
+- **GIVEN** a merged Playwright JSON report where a single test has multiple results from different shards
+- **AND** some results are from shards that ran the test (status: "passed" or "failed")
+- **AND** other results are from shards that skipped the test (status: "skipped" with "Not in shard" annotation on the test)
+- **WHEN** the `filter-report` command is executed
+- **THEN** only the non-orchestrator-skipped results remain within the test
+- **AND** the orchestrator-skipped results are removed from the `results[]` array
+
+#### Scenario: Remove tests with only orchestrator-skipped results
+
+- **GIVEN** a merged Playwright JSON report where a test has multiple results
+- **AND** ALL results are orchestrator-skipped (status: "skipped" with "Not in shard" annotation)
+- **WHEN** the `filter-report` command is executed
+- **THEN** the entire test is removed from its parent spec
+- **AND** if no tests remain, the spec is removed
+
+#### Scenario: Preserve genuine user-skipped results
+
+- **GIVEN** a merged Playwright JSON report where a test has a result with status "skipped"
+- **AND** the test's skip annotation description is NOT "Not in shard" (e.g., "not ready yet", "WIP")
+- **WHEN** the `filter-report` command is executed
+- **THEN** the user-skipped result is preserved
 
 ### Requirement: Reporter-Based Test Filtering
 
@@ -363,4 +396,73 @@ The system SHALL correctly handle `test.each()` parameterized tests.
 - **WHEN** the reporter filters tests
 - **THEN** only `value 2 works` iteration runs
 - **AND** `value 1 works` and `value 3 works` are skipped
+
+### Requirement: File Affinity Distribution
+
+The system SHALL support a file affinity penalty that discourages splitting tests from the same file across different shards, reducing redundant page/context initialization costs.
+
+#### Scenario: File affinity enabled by default
+
+- **GIVEN** the `assign` command is executed without `--file-affinity` flag
+- **AND** timing data is available
+- **WHEN** tests are distributed across shards
+- **THEN** the file affinity penalty is automatically calculated from timing data (P25 of per-file average durations)
+- **AND** the penalty is applied during distribution
+
+#### Scenario: File affinity disabled explicitly
+
+- **GIVEN** the `assign` command is executed with `--no-file-affinity`
+- **WHEN** tests are distributed across shards
+- **THEN** no file affinity penalty is applied
+- **AND** the distribution is identical to the behavior without file affinity
+
+#### Scenario: Auto-calculated penalty from timing data
+
+- **GIVEN** timing data with files:
+  - `page-a.spec.ts`: tests at 20s, 25s, 15s (avg 20s)
+  - `page-b.spec.ts`: tests at 40s, 50s (avg 45s)
+  - `page-c.spec.ts`: tests at 8s, 10s, 12s (avg 10s)
+  - `page-d.spec.ts`: tests at 30s, 35s (avg 32.5s)
+- **WHEN** the file affinity penalty is calculated
+- **THEN** the penalty equals the P25 of per-file averages [10s, 20s, 32.5s, 45s] (approximately 17.5s)
+
+#### Scenario: Fallback penalty when no timing data
+
+- **GIVEN** no timing data exists (first run)
+- **AND** file affinity is enabled
+- **WHEN** the file affinity penalty is calculated
+- **THEN** the penalty defaults to 30 seconds (30000ms)
+
+#### Scenario: Manual penalty override
+
+- **GIVEN** the user runs `assign --file-affinity-penalty 20000`
+- **WHEN** the command parses flags
+- **THEN** the penalty is set to 20000ms (20 seconds)
+- **AND** the auto-calculation is skipped
+
+#### Scenario: Same-file tests grouped with penalty
+
+- **GIVEN** 4 tests from `page-a.spec.ts` (10s, 10s, 10s, 10s) and 4 tests from `page-b.spec.ts` (10s, 10s, 10s, 10s)
+- **AND** 2 shards
+- **AND** file affinity penalty is 30s
+- **WHEN** the `assign` command is executed
+- **THEN** all `page-a.spec.ts` tests are on one shard and all `page-b.spec.ts` tests on the other
+- **AND** neither file is split across shards
+
+#### Scenario: File split when makespan benefit exceeds penalty
+
+- **GIVEN** 1 test from `heavy.spec.ts` (120s) and 1 test from `heavy.spec.ts` (60s) and 2 tests from `light.spec.ts` (10s, 10s)
+- **AND** 2 shards
+- **AND** file affinity penalty is 5s
+- **WHEN** the `assign` command is executed
+- **THEN** the algorithm MAY split `heavy.spec.ts` across shards if that produces a significantly better makespan
+
+#### Scenario: Penalty affects LPT shard selection
+
+- **GIVEN** shard 1 has load 50s and contains tests from `page-a.spec.ts`
+- **AND** shard 2 has load 48s and contains no tests from `page-a.spec.ts`
+- **AND** the next test to assign is from `page-a.spec.ts` (duration 10s)
+- **AND** file affinity penalty is 5s
+- **WHEN** the LPT algorithm evaluates shard assignment
+- **THEN** shard 1 is preferred (effective load 50+10=60) over shard 2 (effective load 48+10+5=63)
 

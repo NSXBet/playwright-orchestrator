@@ -4,6 +4,11 @@ import type { DiscoveredTest, TimingData } from './types.js';
 import { parseTestId } from './types.js';
 
 /**
+ * Default file affinity penalty when no timing data exists (30 seconds)
+ */
+export const DEFAULT_FILE_AFFINITY_PENALTY = 30000;
+
+/**
  * Default milliseconds per line for duration estimation
  */
 export const DEFAULT_MS_PER_LINE = 100;
@@ -160,6 +165,52 @@ export function calculateAverageTestDuration(
   const durations = Object.values(timingData.tests).map((t) => t.duration);
   const sum = durations.reduce((acc, d) => acc + d, 0);
   return Math.round(sum / durations.length);
+}
+
+/**
+ * Calculate file affinity penalty from timing data.
+ *
+ * Computes the P25 (25th percentile) of per-file average durations.
+ * Falls back to DEFAULT_FILE_AFFINITY_PENALTY when no timing data exists.
+ */
+export function calculateFileAffinityPenalty(
+  timingData: TimingData | null,
+): number {
+  if (!timingData || Object.keys(timingData.tests).length === 0) {
+    return DEFAULT_FILE_AFFINITY_PENALTY;
+  }
+
+  // Group tests by file and compute average duration per file
+  const fileTests = new Map<string, number[]>();
+  for (const test of Object.values(timingData.tests)) {
+    const durations = fileTests.get(test.file);
+    if (durations) {
+      durations.push(test.duration);
+    } else {
+      fileTests.set(test.file, [test.duration]);
+    }
+  }
+
+  const fileAverages: number[] = [];
+  for (const durations of fileTests.values()) {
+    const sum = durations.reduce((acc, d) => acc + d, 0);
+    fileAverages.push(sum / durations.length);
+  }
+
+  if (fileAverages.length === 0) {
+    return DEFAULT_FILE_AFFINITY_PENALTY;
+  }
+
+  // P25 of per-file averages
+  fileAverages.sort((a, b) => a - b);
+  const index = (fileAverages.length - 1) * 0.25;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  const lowerVal = fileAverages[lower] ?? 0;
+  const upperVal = fileAverages[upper] ?? lowerVal;
+  const penalty = lowerVal + (upperVal - lowerVal) * (index - lower);
+
+  return Math.round(penalty);
 }
 
 /**

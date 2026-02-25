@@ -76,6 +76,16 @@ Example: `betslip.spec.ts::BetSlip::should create a single bet`
 - Must work locally without GitHub (storage-agnostic)
 - Must support Act for local CI testing
 
+## Post-Implementation Checklist
+
+After completing any feature, fix, or breaking change, ALWAYS perform these steps before considering the work done:
+
+1. **Changeset**: Run `bunx changeset add --empty` to scaffold the changeset file (never create the file manually). Then edit the generated file to set the appropriate bump type (`patch`, `minor`, or `major`) and add a summary of the change. This is REQUIRED for any code change that affects the published package.
+2. **README / Docs**: Update `README.md` if the change adds, modifies, or removes CLI flags, configuration options, public API, or usage patterns. Keep docs in sync with the code.
+3. **OpenSpec**: If the change was driven by a proposal in `openspec/changes/`, update `tasks.md` to mark completed items. After deployment, archive the change per the OpenSpec workflow.
+
+Never skip these steps. If unsure whether a changeset is needed, create one -- it's easier to remove than to forget.
+
 ## External Dependencies
 
 - **Playwright**: Test framework (user's dependency, not ours)
