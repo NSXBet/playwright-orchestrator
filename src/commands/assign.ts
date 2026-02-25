@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import { Command, Flags } from '@oclif/core';
 import {
   assignWithCKK,
+  calculateFileAffinityPenalty,
   DEFAULT_CKK_TIMEOUT,
   type DiscoveredTest,
   getTestDurations,
@@ -54,6 +55,16 @@ export default class Assign extends Command {
     timeout: Flags.integer({
       description: 'CKK algorithm timeout in milliseconds',
       default: DEFAULT_CKK_TIMEOUT,
+    }),
+    'file-affinity': Flags.boolean({
+      description:
+        'Enable file affinity to keep same-file tests on the same shard',
+      default: true,
+      allowNo: true,
+    }),
+    'file-affinity-penalty': Flags.integer({
+      description:
+        'File affinity penalty in milliseconds (overrides auto-calculation)',
     }),
   };
 
@@ -112,7 +123,25 @@ export default class Assign extends Command {
       estimated: t.estimated,
     }));
 
-    const ckkResult = assignWithCKK(testInputs, flags.shards, flags.timeout);
+    let fileAffinityPenalty = 0;
+    if (flags['file-affinity']) {
+      fileAffinityPenalty =
+        flags['file-affinity-penalty'] ??
+        calculateFileAffinityPenalty(timingData);
+
+      if (flags.verbose) {
+        this.log(
+          `File affinity penalty: ${this.formatDuration(fileAffinityPenalty)}`,
+        );
+      }
+    }
+
+    const ckkResult = assignWithCKK(
+      testInputs,
+      flags.shards,
+      flags.timeout,
+      fileAffinityPenalty,
+    );
 
     if (flags.verbose) {
       this.log(
