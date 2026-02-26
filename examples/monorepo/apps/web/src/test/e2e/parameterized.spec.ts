@@ -1,4 +1,4 @@
-import { expect, test } from './setup.js';
+import { expect, test } from '@playwright/test';
 
 // Edge case: test.each with array of objects
 const users = [

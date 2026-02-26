@@ -10,6 +10,15 @@ import type {
 import { buildTestId } from './types.js';
 
 /**
+ * Result of loading a test list with config information
+ */
+export interface TestListWithConfig {
+  tests: DiscoveredTest[];
+  rootDir: string;
+  testDir: string;
+}
+
+/**
  * Load tests from a pre-generated Playwright --list JSON file
  *
  * @param filePath - Path to JSON file (from `npx playwright test --list --reporter=json`)
@@ -20,8 +29,23 @@ export function loadTestListFromFile(
   filePath: string,
   projectName?: string,
 ): DiscoveredTest[] {
+  return loadTestListWithConfig(filePath, projectName).tests;
+}
+
+/**
+ * Load tests from a pre-generated Playwright --list JSON file, also
+ * returning rootDir and testDir from the Playwright config.
+ *
+ * @param filePath - Path to JSON file (from `npx playwright test --list --reporter=json`)
+ * @param projectName - Optional project name to find the correct testDir
+ * @returns Tests and config paths (rootDir, testDir)
+ */
+export function loadTestListWithConfig(
+  filePath: string,
+  projectName?: string,
+): TestListWithConfig {
   const content = fs.readFileSync(filePath, 'utf-8');
-  return parsePlaywrightListOutput(content, projectName);
+  return parsePlaywrightListOutputWithConfig(content, projectName);
 }
 
 /**
@@ -66,9 +90,6 @@ export function discoverTests(
 /**
  * Parse Playwright --list JSON output
  *
- * CRITICAL: Uses project.testDir for path resolution to match fixture behavior.
- * The fixture uses testInfo.project.testDir, so discovery must use the same base.
- *
  * @param jsonOutput - Raw JSON output from Playwright --list
  * @param projectName - Optional project name to find the correct testDir
  * @returns List of discovered tests
@@ -77,16 +98,37 @@ export function parsePlaywrightListOutput(
   jsonOutput: string,
   projectName?: string,
 ): DiscoveredTest[] {
+  return parsePlaywrightListOutputWithConfig(jsonOutput, projectName).tests;
+}
+
+/**
+ * Parse Playwright --list JSON output, returning both tests and config paths.
+ *
+ * @param jsonOutput - Raw JSON output from Playwright --list
+ * @param projectName - Optional project name to find the correct testDir
+ * @returns Tests and config paths (rootDir, testDir)
+ */
+function parsePlaywrightListOutputWithConfig(
+  jsonOutput: string,
+  projectName?: string,
+): TestListWithConfig {
   const tests: DiscoveredTest[] = [];
+  let rootDir = '';
+  let testDir = '';
+  let parsed = false;
 
   const parseAndExtract = (data: PlaywrightListOutput) => {
-    // CRITICAL: Use project.testDir instead of config.rootDir
-    // This ensures test IDs match between discovery and fixture
     const baseDir = getProjectTestDir(data, projectName);
+    if (!data.config?.rootDir) {
+      throw new Error(
+        '[Orchestrator] Missing config.rootDir in Playwright --list JSON output.',
+      );
+    }
+    rootDir = data.config.rootDir;
+    testDir = baseDir;
+    parsed = true;
 
     for (const suite of data.suites) {
-      // Root suites represent files - their title is the filename
-      // We skip this title from titlePath since it's redundant with file
       extractTestsFromSuite(suite, [], tests, baseDir, true);
     }
   };
@@ -94,23 +136,30 @@ export function parsePlaywrightListOutput(
   try {
     const data = JSON.parse(jsonOutput) as PlaywrightListOutput;
     parseAndExtract(data);
-  } catch {
-    // Try parsing line by line if JSON is malformed (older Playwright versions)
-    // or if output contains additional text
+  } catch (error) {
     const jsonMatch = jsonOutput.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const data = JSON.parse(jsonMatch[0]) as PlaywrightListOutput;
       parseAndExtract(data);
+    } else {
+      throw new Error(
+        `[Orchestrator] Failed to parse Playwright --list JSON output: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
-  return tests;
+  if (!parsed) {
+    throw new Error(
+      '[Orchestrator] Failed to parse Playwright --list JSON output.',
+    );
+  }
+
+  return { tests, rootDir, testDir };
 }
 
 /**
  * Get the testDir for a project from Playwright config.
  *
- * CRITICAL: This must match what the fixture uses (testInfo.project.testDir).
  * No fallbacks to process.cwd() - if testDir is not found, fail with clear error.
  *
  * @param data - Parsed Playwright JSON output
@@ -211,11 +260,6 @@ function extractTestsFromSuite(
  * - Full absolute path: "/Users/.../src/test/e2e/account.spec.ts"
  *
  * We return paths relative to rootDir for consistency.
- * This ensures test IDs match between:
- * - Orchestrator (running from repo root, reading test-list.json)
- * - Fixture (running from subdirectory where tests live)
- *
- * Both will generate paths like "src/test/e2e/login.spec.ts" regardless of CWD.
  */
 function resolveFilePath(filePath: string, rootDir: string): string {
   // If it's already an absolute path, make it relative to rootDir
@@ -247,7 +291,6 @@ export function discoverTestsFromFiles(
 
   for (const filePath of files) {
     const content = fs.readFileSync(filePath, 'utf-8');
-    // Use relative path from CWD for consistency with reporter
     const relativeFile = path
       .relative(process.cwd(), filePath)
       .replace(/\\/g, '/');

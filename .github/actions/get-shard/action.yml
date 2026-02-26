@@ -2,8 +2,8 @@ name: Get Shard Test Arguments
 description: Extract test arguments for a specific shard from orchestrate output
 
 inputs:
-  shard-files:
-    description: JSON shard assignments from orchestrate action (shard-files output)
+  test-list-files:
+    description: JSON test-list content from orchestrate action (test-list-files output)
     required: true
   shard-index:
     description: Which shard to get (1-based)
@@ -13,9 +13,9 @@ inputs:
     required: true
 
 outputs:
-  shard-file:
-    description: Path to JSON file with test IDs for reporter-based filtering
-    value: ${{ steps.parse.outputs.shard-file }}
+  test-list-file:
+    description: Path to plain text file for Playwright --test-list flag
+    value: ${{ steps.parse.outputs.test-list-file }}
   has-tests:
     description: Whether this shard has tests assigned
     value: ${{ steps.parse.outputs.has-tests }}
@@ -33,39 +33,44 @@ runs:
       id: parse
       shell: bash
       run: |
-        SHARD_FILES='${{ inputs.shard-files }}'
+        TEST_LIST_FILES=$(cat <<'EOF'
+        ${{ inputs.test-list-files }}
+        EOF
+        )
         SHARD_INDEX='${{ inputs.shard-index }}'
         TOTAL='${{ inputs.shards }}'
 
         # Always output fallback args
         echo "fallback-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
 
-        # Check if we have valid shard files
-        if [ -z "$SHARD_FILES" ] || [ "$SHARD_FILES" = "{}" ] || [ "$SHARD_FILES" = "null" ]; then
+        # Check if we have valid test-list files
+        if [ -z "$TEST_LIST_FILES" ] || [ "$TEST_LIST_FILES" = "{}" ] || [ "$TEST_LIST_FILES" = "null" ]; then
           echo "::notice::No orchestrator data, using native sharding for shard $SHARD_INDEX/$TOTAL"
           echo "has-tests=false" >> $GITHUB_OUTPUT
           echo "test-count=0" >> $GITHUB_OUTPUT
-          echo "shard-file=" >> $GITHUB_OUTPUT
+          echo "test-list-file=" >> $GITHUB_OUTPUT
           exit 0
         fi
 
-        # Extract tests for this shard
-        TESTS=$(echo "$SHARD_FILES" | jq -c ".\"$SHARD_INDEX\" // []")
-        TEST_COUNT=$(echo "$TESTS" | jq 'length')
+        # Extract test-list content for this shard (raw string, not JSON array)
+        CONTENT=$(printf '%s' "$TEST_LIST_FILES" | jq -r --arg idx "$SHARD_INDEX" '.[$idx] // ""')
 
-        if [ "$TEST_COUNT" = "0" ] || [ "$TEST_COUNT" = "null" ]; then
+        if [ -z "$CONTENT" ]; then
           echo "::notice::No tests assigned to shard $SHARD_INDEX, using native sharding"
           echo "has-tests=false" >> $GITHUB_OUTPUT
           echo "test-count=0" >> $GITHUB_OUTPUT
-          echo "shard-file=" >> $GITHUB_OUTPUT
+          echo "test-list-file=" >> $GITHUB_OUTPUT
           exit 0
         fi
+
+        # Count non-empty lines
+        TEST_COUNT=$(printf '%s' "$CONTENT" | grep -c . || echo "0")
 
         echo "::notice::Shard $SHARD_INDEX has $TEST_COUNT tests"
         echo "has-tests=true" >> $GITHUB_OUTPUT
         echo "test-count=$TEST_COUNT" >> $GITHUB_OUTPUT
 
-        # Write test IDs to JSON file for reporter-based filtering
-        SHARD_FILE="$GITHUB_WORKSPACE/playwright-shard-$SHARD_INDEX.json"
-        echo "$TESTS" > "$SHARD_FILE"
-        echo "shard-file=$SHARD_FILE" >> $GITHUB_OUTPUT
+        # Write test-list content to plain text file for --test-list flag
+        TEST_LIST_FILE="$GITHUB_WORKSPACE/playwright-test-list-$SHARD_INDEX.txt"
+        printf '%s' "$CONTENT" > "$TEST_LIST_FILE"
+        echo "test-list-file=$TEST_LIST_FILE" >> $GITHUB_OUTPUT

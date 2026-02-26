@@ -1,144 +1,65 @@
 /**
  * Test ID Generation Module
  *
- * This module provides shared functions for generating consistent test IDs
- * across all orchestrator components (fixture, reporter).
- *
- * CRITICAL: All components MUST use these shared functions to ensure
- * test IDs match between shard assignment and runtime filtering.
- *
- * There are two contexts for test ID generation:
- * 1. Discovery context: Uses buildTestId from types.ts (data from Playwright JSON)
- * 2. Runtime context: Uses buildTestIdFromRuntime (data from testInfo.titlePath)
+ * Provides shared functions for generating consistent test IDs
+ * and converting them to Playwright's --test-list format.
  *
  * @module @nsxbet/playwright-orchestrator/core/test-id
  */
 
-import * as path from 'node:path';
+const TEST_LIST_SEPARATOR = ' › ';
 
 /**
- * Options for filtering runtime titlePath
+ * Minimal test entry for test-list format conversion.
+ * Uses the structured data from Playwright's --list JSON directly,
+ * avoiding the lossy parseTestId round-trip (test names may contain `::`)
  */
-export interface FilterTitlePathOptions {
-  /** Playwright project name to exclude from titlePath */
-  projectName?: string;
-  /** File name (basename) to exclude from titlePath */
-  fileName?: string;
+export interface TestListEntry {
+  file: string;
+  titlePath: string[];
 }
 
 /**
- * Filter titlePath from Playwright runtime (testInfo.titlePath) to get only
- * describe blocks and test title.
+ * Convert a test entry to Playwright's --test-list format.
  *
- * Playwright's runtime titlePath includes:
- * - Project name (e.g., "chromium")
- * - File path or filename
- * - Describe block titles
- * - Test title
+ * Test-list format: `file › describe › test`
  *
- * This function removes non-meaningful elements to produce a clean titlePath
- * that matches what test-discovery produces from Playwright's JSON output.
+ * When testDirPrefix is provided (monorepo case where testDir != rootDir),
+ * the prefix is prepended to the file path so paths are relative to rootDir.
  *
- * @param titlePath - Raw titlePath from testInfo.titlePath or test.titlePath()
- * @param options - Options for filtering
- * @returns Filtered titlePath containing only describe blocks and test title
+ * @param entry - Test entry with file and titlePath from Playwright discovery
+ * @param testDirPrefix - Relative path from rootDir to testDir (e.g. `src/test/e2e`)
+ * @returns Test-list formatted string (e.g. `src/test/e2e/login.spec.ts › Login › should login`)
  */
-export function filterRuntimeTitlePath(
-  titlePath: string[],
-  options: FilterTitlePathOptions = {},
-): string[] {
-  const { projectName, fileName } = options;
-
-  return titlePath.filter((title) => {
-    // Filter empty strings
-    if (!title || title === '') return false;
-
-    // Filter project name
-    if (projectName && title === projectName) return false;
-
-    // Filter filename
-    if (fileName && title === fileName) return false;
-
-    // Filter out file paths (contain / or \)
-    if (title.includes('/') || title.includes('\\')) return false;
-
-    // Filter out spec/test file extensions
-    if (title.endsWith('.spec.ts') || title.endsWith('.test.ts')) return false;
-    if (title.endsWith('.spec.js') || title.endsWith('.test.js')) return false;
-
-    return true;
-  });
-}
-
-/**
- * Options for building a test ID from runtime data
- */
-export interface BuildTestIdFromRuntimeOptions {
-  /** Playwright project name to exclude from titlePath */
-  projectName?: string;
-  /**
-   * Base directory for relative path resolution.
-   * REQUIRED: Must be testInfo.project.testDir from Playwright.
-   * No fallback to process.cwd() - this caused the rootDir vs testDir bug.
-   */
-  baseDir: string;
-}
-
-/**
- * Build a test ID from Playwright runtime data (fixture or reporter context).
- *
- * CRITICAL: The baseDir MUST be the project's testDir (testInfo.project.testDir).
- * This ensures test IDs match between discovery and runtime filtering.
- *
- * This function:
- * 1. Converts the absolute file path to relative (using baseDir)
- * 2. Filters the titlePath to remove project name, filename, and file paths
- * 3. Joins file and filtered titles with "::"
- *
- * The resulting test ID format: {relative-file}::{describe1}::{describe2}::{testTitle}
- *
- * @param filePath - Absolute path to the test file (testInfo.file or test.location.file)
- * @param titlePath - Raw titlePath from testInfo.titlePath or test.titlePath()
- * @param options - Options for path resolution and filtering (baseDir is REQUIRED)
- * @returns Test ID string
- * @throws Error if baseDir is not provided
- *
- * @example
- * ```typescript
- * const testId = buildTestIdFromRuntime(
- *   '/project/src/test/e2e/login.spec.ts',
- *   ['chromium', 'login.spec.ts', 'Login', 'should work'],
- *   { projectName: 'chromium', baseDir: '/project/src/test/e2e' }
- * );
- * // Result: 'login.spec.ts::Login::should work'
- * ```
- */
-export function buildTestIdFromRuntime(
-  filePath: string,
-  titlePath: string[],
-  options?: BuildTestIdFromRuntimeOptions,
+export function toTestListFormat(
+  entry: TestListEntry,
+  testDirPrefix?: string,
 ): string {
-  if (!options?.baseDir) {
-    throw new Error(
-      '[Orchestrator] baseDir is required for test ID generation. ' +
-        'Use testInfo.project.testDir from Playwright. ' +
-        'Do NOT use process.cwd() as it causes path mismatch bugs.',
-    );
-  }
+  const cleanPrefix = (testDirPrefix ?? '')
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '');
+  const normalizedFile = entry.file.replace(/\\/g, '/');
+  const fullPath = cleanPrefix
+    ? `${cleanPrefix}/${normalizedFile}`
+    : normalizedFile;
 
-  const { projectName, baseDir } = options;
+  return [fullPath, ...entry.titlePath].join(TEST_LIST_SEPARATOR);
+}
 
-  // Convert absolute path to relative
-  const file = path.relative(baseDir, filePath).replace(/\\/g, '/');
-
-  // Get filename for filtering
-  const fileName = path.basename(filePath);
-
-  // Filter titlePath
-  const filteredTitles = filterRuntimeTitlePath(titlePath, {
-    projectName,
-    fileName,
-  });
-
-  return [file, ...filteredTitles].join('::');
+/**
+ * Convert an array of test entries to a complete test-list file content.
+ *
+ * Each line is one test in Playwright's --test-list format, with a trailing newline.
+ * Returns empty string for an empty array.
+ *
+ * @param entries - Array of test entries from Playwright discovery
+ * @param testDirPrefix - Relative path from rootDir to testDir
+ * @returns Ready-to-write test-list file content
+ */
+export function toTestListFile(
+  entries: TestListEntry[],
+  testDirPrefix?: string,
+): string {
+  if (entries.length === 0) return '';
+  return `${entries.map((e) => toTestListFormat(e, testDirPrefix)).join('\n')}\n`;
 }

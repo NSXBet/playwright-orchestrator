@@ -6,11 +6,12 @@ import {
   DEFAULT_CKK_TIMEOUT,
   type DiscoveredTest,
   getTestDurations,
-  loadTestListFromFile,
+  loadTestListWithConfig,
   loadTimingData,
   type TestAssignResult,
   type TestWithDuration,
   type TimingData,
+  toTestListFile,
 } from '../core/index.js';
 
 export default class Assign extends Command {
@@ -72,13 +73,26 @@ export default class Assign extends Command {
     const { flags } = await this.parse(Assign);
 
     const testListPath = path.resolve(flags['test-list']);
-    const tests: DiscoveredTest[] = loadTestListFromFile(
+    const { tests, rootDir, testDir } = loadTestListWithConfig(
       testListPath,
       flags.project,
     );
 
+    if (!testDir) {
+      throw new Error(
+        '[Orchestrator] project.testDir is missing in test-list.json. ' +
+          'Regenerate with `npx playwright test --list --reporter=json`.',
+      );
+    }
+    const testDirPrefix = rootDir
+      ? path.relative(rootDir, testDir).replace(/\\/g, '/')
+      : '';
+
     if (flags.verbose) {
       this.log(`Loaded ${tests.length} tests from ${testListPath}`);
+      if (testDirPrefix) {
+        this.log(`testDir prefix for --test-list paths: ${testDirPrefix}`);
+      }
     }
 
     if (tests.length === 0) {
@@ -94,6 +108,9 @@ export default class Assign extends Command {
           totalTests: 0,
           estimatedTests: [],
           isOptimal: true,
+          testListFiles: Object.fromEntries(
+            Array.from({ length: flags.shards }, (_, i) => [i + 1, '']),
+          ),
         },
         flags['output-format'],
       );
@@ -155,6 +172,25 @@ export default class Assign extends Command {
       shardTests[assignment.shardIndex] = assignment.tests;
     }
 
+    const testMap = new Map<string, DiscoveredTest>(
+      tests.map((t) => [t.testId, t]),
+    );
+
+    const testListFiles: Record<number, string> = {};
+    for (const [shardIndex, testIds] of Object.entries(shardTests)) {
+      const entries = testIds.map((id) => {
+        const test = testMap.get(id);
+        if (!test) {
+          throw new Error(`[Orchestrator] Test not found in discovery: ${id}`);
+        }
+        return { file: test.file, titlePath: test.titlePath };
+      });
+      testListFiles[Number(shardIndex)] = toTestListFile(
+        entries,
+        testDirPrefix,
+      );
+    }
+
     const result: TestAssignResult = {
       shards: shardTests,
       expectedDurations: Object.fromEntries(
@@ -163,6 +199,7 @@ export default class Assign extends Command {
       totalTests: tests.length,
       estimatedTests,
       isOptimal: ckkResult.isOptimal,
+      testListFiles,
     };
 
     this.outputResult(result, flags['output-format'], flags.verbose);

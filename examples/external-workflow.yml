@@ -3,8 +3,10 @@
 #
 # This workflow uses a three-phase pattern:
 # 1. orchestrate: Run once, compute shard assignments for all shards
-# 2. e2e: Matrix jobs use get-shard action to get their shard file
+# 2. e2e: Matrix jobs use get-shard action to get their test-list file
 # 3. merge-timing: Collect timing data from all shards
+#
+# Requires: Playwright 1.56+ (for --test-list flag)
 #
 # YOU control: cache keys, artifact paths
 # ACTIONS handle: orchestration logic, parsing, fallback
@@ -28,7 +30,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      shard-files: ${{ steps.orchestrate.outputs.shard-files }}
+      test-list-files: ${{ steps.orchestrate.outputs.test-list-files }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,7 +58,6 @@ jobs:
             playwright-timing-
 
       # IMPORTANT: Use Playwright to list tests for accurate discovery
-      # This ensures parameterized tests (test.each) are correctly identified
       - name: Generate test list
         run: npx playwright test --list --reporter=json > test-list.json
 
@@ -65,8 +66,8 @@ jobs:
         id: orchestrate
         uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
         with:
-          test-list: test-list.json # Required: pre-generated list
-          timing-file: timing-data.json # Required: timing data
+          test-list: test-list.json
+          timing-file: timing-data.json
           shards: ${{ env.SHARDS }}
 
   # ============================================
@@ -85,7 +86,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Setup your project (adjust as needed)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -98,21 +98,26 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      # Action outputs shard-file for reporter-based filtering
+      # Action outputs test-list-file for --test-list flag
       - name: Get shard assignment
         uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
         id: shard
+        continue-on-error: true
         with:
-          shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+          test-list-files: ${{ needs.orchestrate.outputs.test-list-files }}
           shard-index: ${{ matrix.shard }}
           shards: ${{ env.SHARDS }}
 
-      # Reporter reads ORCHESTRATOR_SHARD_FILE to filter tests
-      # Falls back to native --shard=N/M if orchestration failed
+      # Use --test-list for clean, pre-execution filtering
+      # Falls back to native --shard=N/M if get-shard fails or returns no file
       - name: Run Playwright tests
-        run: npx playwright test ${{ steps.shard.outputs.fallback-args }}
-        env:
-          ORCHESTRATOR_SHARD_FILE: ${{ steps.shard.outputs.shard-file }}
+        run: |
+          TEST_LIST_FILE="${{ steps.shard.outputs.test-list-file }}"
+          if [ -n "$TEST_LIST_FILE" ] && [ -f "$TEST_LIST_FILE" ]; then
+            npx playwright test --test-list "$TEST_LIST_FILE"
+          else
+            npx playwright test --shard=${{ matrix.shard }}/${{ env.SHARDS }}
+          fi
 
       # Extract timing (runs unless cancelled)
       - name: Setup Orchestrator
@@ -123,9 +128,10 @@ jobs:
         if: success() || failure()
         uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
         with:
-          report-file: playwright-report/results.json # Adjust to your report path
+          report-file: playwright-report/results.json
           output-file: timing-shard-${{ matrix.shard }}.json
           shard: ${{ matrix.shard }}
+          project: chromium
 
       # YOU control artifact location
       - name: Upload timing artifact

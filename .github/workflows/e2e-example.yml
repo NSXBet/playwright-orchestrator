@@ -9,10 +9,13 @@ on:
         default: '3'
 
 jobs:
-  setup:
-    name: Setup & Assign
+  # Phase 1: Orchestrate
+  orchestrate:
+    name: Orchestrate
     runs-on: ubuntu-24.04
     outputs:
+      test-list-files: ${{ steps.orchestrate.outputs.test-list-files }}
+      use-orchestrator: ${{ steps.orchestrate.outputs.use-orchestrator }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Checkout
@@ -30,15 +33,33 @@ jobs:
           SHARDS="${{ github.event.inputs.shards || '3' }}"
           MATRIX=$(seq 1 $SHARDS | jq -R . | jq -sc '{shard: .}')
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-          echo "Generated matrix: $MATRIX"
 
+      - name: Install example dependencies
+        working-directory: examples/basic
+        run: |
+          npm install
+          npx playwright install chromium --with-deps
+
+      - name: Generate test list
+        working-directory: examples/basic
+        run: npx playwright test --list --reporter=json > test-list.json
+
+      - name: Orchestrate tests
+        id: orchestrate
+        uses: ./.github/actions/orchestrate
+        with:
+          test-list: examples/basic/test-list.json
+          timing-file: timing-data.json
+          shards: ${{ github.event.inputs.shards || '3' }}
+
+  # Phase 2: Run tests
   test:
     name: Test Shard ${{ matrix.shard }}
-    needs: setup
+    needs: orchestrate
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.orchestrate.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,42 +76,41 @@ jobs:
           npm install
           npx playwright install chromium --with-deps
 
-      - name: Orchestrate tests
-        id: orchestrate
-        uses: ./.github/actions/orchestrate
+      - name: Get shard assignment
+        id: shard
+        uses: ./.github/actions/get-shard
         with:
-          test-dir: examples/basic/tests
-          shards: ${{ github.event.inputs.shards || '3' }}
+          test-list-files: ${{ needs.orchestrate.outputs.test-list-files }}
           shard-index: ${{ matrix.shard }}
-          level: test
+          shards: ${{ github.event.inputs.shards || '3' }}
 
       - name: Run Playwright tests
         working-directory: examples/basic
         run: |
-          GREP_PATTERN="${{ steps.orchestrate.outputs.grep-pattern }}"
-
-          if [ -z "$GREP_PATTERN" ]; then
-            echo "No tests assigned to this shard"
-            exit 0
+          TEST_LIST_FILE="${{ steps.shard.outputs.test-list-file }}"
+          if [ -n "$TEST_LIST_FILE" ] && [ -f "$TEST_LIST_FILE" ]; then
+            echo "Running tests with --test-list"
+            npx playwright test --test-list "$TEST_LIST_FILE" || true
+          else
+            echo "No test-list file, running all tests"
+            npx playwright test ${{ steps.shard.outputs.fallback-args }} || true
           fi
 
-          echo "Running tests matching: $GREP_PATTERN"
-          npx playwright test --grep "$GREP_PATTERN" || true
-
       - name: Extract timing data
-        if: always()
+        if: success() || failure()
         uses: ./.github/actions/extract-timing
         with:
           report-file: examples/basic/results.json
           output-file: timing-shard-${{ matrix.shard }}.json
           shard: ${{ matrix.shard }}
-          level: test
+          project: chromium
 
+  # Phase 3: Merge timing
   merge:
     name: Merge Timing
     needs: test
     runs-on: ubuntu-24.04
-    if: always()
+    if: success() || failure()
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -105,7 +125,6 @@ jobs:
         uses: ./.github/actions/merge-timing
         with:
           output-file: timing.json
-          level: test
 
       - name: Show timing data
         run: |

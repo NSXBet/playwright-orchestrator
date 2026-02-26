@@ -102,6 +102,8 @@ export interface TestAssignResult {
   estimatedTests: string[];
   /** Whether CKK found optimal solution (false = fell back to LPT) */
   isOptimal: boolean;
+  /** Map of shard index to Playwright --test-list file content (rootDir-relative paths) */
+  testListFiles: Record<number, string>;
 }
 
 /**

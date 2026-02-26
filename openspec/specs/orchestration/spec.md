@@ -85,28 +85,21 @@ The system SHALL distribute tests across shards to minimize the maximum shard du
 
 ### Requirement: Timing Data Collection
 
-The system SHALL extract timing data from Playwright JSON reports, scoped to a specific shard and project.
+The system SHALL extract timing data from Playwright JSON reports scoped to a specific project. With `--test-list`, reports are natively clean and no shard-file filtering is needed.
 
-#### Scenario: Extract test-level timing
+#### Scenario: Extract timing from clean report
 
-- **GIVEN** a Playwright JSON report with test results
-- **AND** a shard file listing the tests assigned to this shard
+- **GIVEN** a Playwright JSON report produced with `--test-list` filtering
+- **AND** the report contains only tests that ran in this shard
 - **AND** a project name
-- **WHEN** the `extract-timing` command is executed with `--shard-file` and `--project`
-- **THEN** the system extracts duration only for tests listed in the shard file
-- **AND** zero-duration orchestrator-skipped entries are excluded
+- **WHEN** the `extract-timing` command is executed with `--project`
+- **THEN** the system extracts timing for ALL tests in the report
 
 #### Scenario: Handle missing report
 
 - **GIVEN** a non-existent report file path
 - **WHEN** the `extract-timing` command is executed
 - **THEN** the system exits with an error message
-
-#### Scenario: Handle malformed shard file
-
-- **GIVEN** a shard file that is not valid JSON or not a JSON array
-- **WHEN** the `extract-timing` command is executed
-- **THEN** the system SHALL exit with a clear error message
 
 ### Requirement: Timing Data Merging
 
@@ -178,224 +171,72 @@ The system SHALL support local CI testing using Act.
 - **AND** Run 2 uses timing-based distribution
 - **AND** timing data is persisted between runs
 
-### Requirement: Reporter JSON Filtering
-
-The orchestrator reporter SHALL optionally filter a Playwright JSON report file after all reporters have finished writing, removing tests not assigned to the current shard.
-
-#### Scenario: filterJson option rewrites report in onExit
-
-- **GIVEN** the orchestrator reporter is configured with `filterJson: 'results.json'`
-- **AND** a shard file is active via `ORCHESTRATOR_SHARD_FILE`
-- **WHEN** all reporters finish and `onExit` is called
-- **THEN** the reporter reads `results.json`, removes specs not in the shard file, prunes empty suites, and rewrites the file
-
-#### Scenario: filterJson omitted is a no-op
-
-- **GIVEN** the orchestrator reporter is configured without `filterJson`
-- **WHEN** `onExit` is called
-- **THEN** no JSON file is read or modified
-
-#### Scenario: No shard file disables filtering
-
-- **GIVEN** the orchestrator reporter is configured with `filterJson: 'results.json'`
-- **AND** no `ORCHESTRATOR_SHARD_FILE` is set
-- **WHEN** `onExit` is called
-- **THEN** no JSON file is modified
-
-### Requirement: Report Filtering Command
-
-The system SHALL provide a `filter-report` CLI command that removes orchestrator-skipped tests from a Playwright JSON report, identified by the annotation `"Not in shard"`. The filter SHALL operate at the results level within each test, not just at the spec level.
-
-#### Scenario: Remove orchestrator-skipped tests from merged report
-
-- **GIVEN** a merged Playwright JSON report containing tests from multiple shards
-- **AND** some tests have `status: "skipped"` with annotation `description: "Not in shard"`
-- **WHEN** the `filter-report` command is executed
-- **THEN** those orchestrator-skipped specs are removed
-- **AND** genuine user-skipped tests (`test.skip()`, `test.fixme()`) are preserved
-
-#### Scenario: Report with no orchestrator skips is unchanged
-
-- **GIVEN** a Playwright JSON report with no `"Not in shard"` annotations
-- **WHEN** the `filter-report` command is executed
-- **THEN** the output is identical to the input
-
-#### Scenario: In-place filtering
-
-- **GIVEN** the `filter-report` command is called without `--output-file`
-- **WHEN** filtering completes
-- **THEN** the input file is overwritten with the filtered report
-
-#### Scenario: Strip orchestrator-skipped results from merged tests
-
-- **GIVEN** a merged Playwright JSON report where a single test has multiple results from different shards
-- **AND** some results are from shards that ran the test (status: "passed" or "failed")
-- **AND** other results are from shards that skipped the test (status: "skipped" with "Not in shard" annotation on the test)
-- **WHEN** the `filter-report` command is executed
-- **THEN** only the non-orchestrator-skipped results remain within the test
-- **AND** the orchestrator-skipped results are removed from the `results[]` array
-
-#### Scenario: Remove tests with only orchestrator-skipped results
-
-- **GIVEN** a merged Playwright JSON report where a test has multiple results
-- **AND** ALL results are orchestrator-skipped (status: "skipped" with "Not in shard" annotation)
-- **WHEN** the `filter-report` command is executed
-- **THEN** the entire test is removed from its parent spec
-- **AND** if no tests remain, the spec is removed
-
-#### Scenario: Preserve genuine user-skipped results
-
-- **GIVEN** a merged Playwright JSON report where a test has a result with status "skipped"
-- **AND** the test's skip annotation description is NOT "Not in shard" (e.g., "not ready yet", "WIP")
-- **WHEN** the `filter-report` command is executed
-- **THEN** the user-skipped result is preserved
-
-### Requirement: Reporter-Based Test Filtering
-
-The system SHALL provide a Custom Playwright Reporter that filters tests at runtime using exact Set lookup.
-
-#### Scenario: Load test IDs from JSON file
-
-- **GIVEN** a JSON file at path specified by `ORCHESTRATOR_SHARD_FILE` env var
-- **AND** the file contains an array of test IDs
-- **WHEN** the reporter's `onBegin` hook is called
-- **THEN** the reporter loads the test IDs into a Set
-- **AND** logs the count of loaded tests
-
-#### Scenario: Skip tests not in shard
-
-- **GIVEN** the reporter has loaded allowed test IDs
-- **AND** a test with ID not in the allowed set
-- **WHEN** the reporter's `onTestBegin` hook is called
-- **THEN** the reporter adds `{ type: "skip" }` annotation to the test
-- **AND** Playwright skips the test
-
-#### Scenario: Run tests in shard
-
-- **GIVEN** the reporter has loaded allowed test IDs
-- **AND** a test with ID in the allowed set
-- **WHEN** the reporter's `onTestBegin` hook is called
-- **THEN** the reporter does not add skip annotation
-- **AND** the test runs normally
-
-#### Scenario: Graceful fallback when no shard file
-
-- **GIVEN** the `ORCHESTRATOR_SHARD_FILE` env var is not set
-- **OR** the file does not exist
-- **WHEN** the reporter's `onBegin` hook is called
-- **THEN** the reporter allows all tests to run
-- **AND** no tests are skipped
-
 ### Requirement: Exact Test ID Matching
 
-The system SHALL use exact string matching for test IDs, avoiding substring collisions.
+The system SHALL use exact string matching for test IDs, avoiding substring collisions. With `--test-list`, Playwright performs the matching internally using the test-list file content.
 
 #### Scenario: No substring collision
 
-- **GIVEN** shard file contains `["login.spec.ts::Login::should login"]`
+- **GIVEN** the test-list file contains `login.spec.ts › Login › should login`
 - **AND** the test suite has tests:
   - `login.spec.ts::Login::should login`
   - `login.spec.ts::Login::should login with SSO`
-- **WHEN** the reporter filters tests
-- **THEN** only `should login` runs (exact match)
-- **AND** `should login with SSO` is skipped (no substring match)
+- **WHEN** Playwright runs with `--test-list`
+- **THEN** only `should login` is in the suite tree (exact match)
+- **AND** `should login with SSO` is not in the suite tree
 
 #### Scenario: Case-sensitive matching
 
-- **GIVEN** shard file contains `["test.spec.ts::Suite::Should Login"]`
+- **GIVEN** the test-list file contains `test.spec.ts › Suite › Should Login`
 - **AND** the test suite has test `test.spec.ts::Suite::should login`
-- **WHEN** the reporter filters tests
-- **THEN** the test is skipped (case mismatch)
+- **WHEN** Playwright runs with `--test-list`
+- **THEN** `should login` is not in the suite tree (case mismatch)
 
 ### Requirement: Test ID Format
 
-The system SHALL use consistent test ID format: `{relative-file}::{describe}::{test-title}`.
+The system SHALL use consistent test ID format: `{relative-file}::{describe}::{test-title}`. File paths are relative to `project.testDir`. Test IDs are generated during discovery (`buildTestId` from Playwright JSON) and extract-timing (from report suites).
 
-#### Scenario: Build test ID from TestCase
+#### Scenario: Build test ID from discovery JSON
 
-- **GIVEN** a Playwright TestCase with:
-  - `location.file`: `/project/e2e/login.spec.ts`
-  - `titlePath()`: `["Login", "should login"]`
-- **AND** working directory is `/project`
-- **WHEN** the reporter builds the test ID
+- **GIVEN** a Playwright test list JSON with:
+  - suite file: `/project/e2e/login.spec.ts`
+  - title path: `["Login", "should login"]`
+- **AND** `testDir` is `/project`
+- **WHEN** the system builds the test ID
 - **THEN** the ID is `e2e/login.spec.ts::Login::should login`
 
 #### Scenario: Handle nested describes
 
-- **GIVEN** a Playwright TestCase with:
-  - `location.file`: `/project/e2e/auth.spec.ts`
-  - `titlePath()`: `["Auth", "OAuth", "Google", "should redirect"]`
-- **WHEN** the reporter builds the test ID
+- **GIVEN** a Playwright test with:
+  - file: `/project/e2e/auth.spec.ts`
+  - title path: `["Auth", "OAuth", "Google", "should redirect"]`
+- **WHEN** the system builds the test ID
 - **THEN** the ID is `e2e/auth.spec.ts::Auth::OAuth::Google::should redirect`
 
 #### Scenario: Normalize Windows paths
 
-- **GIVEN** a Playwright TestCase with:
-  - `location.file`: `C:\project\e2e\login.spec.ts` (Windows)
-- **WHEN** the reporter builds the test ID
+- **GIVEN** a test file path with backslashes: `e2e\login.spec.ts`
+- **WHEN** the system builds the test ID
 - **THEN** the path uses forward slashes: `e2e/login.spec.ts::...`
-
-### Requirement: Shell-Safe Test Names
-
-The system SHALL handle test names with special characters without shell escaping issues.
-
-#### Scenario: Parentheses in test name
-
-- **GIVEN** a test named `should show error (500)`
-- **AND** it is in the shard file
-- **WHEN** Playwright runs with the reporter
-- **THEN** the test runs without bash syntax errors
-
-#### Scenario: Pipe character in test name
-
-- **GIVEN** a test named `should parse A | B | C`
-- **AND** it is in the shard file
-- **WHEN** Playwright runs with the reporter
-- **THEN** the test runs without bash pipe interpretation
-
-#### Scenario: Dollar sign in test name
-
-- **GIVEN** a test named `should format $100.00`
-- **AND** it is in the shard file
-- **WHEN** Playwright runs with the reporter
-- **THEN** the test runs without bash variable expansion
-
-### Requirement: Debug Mode
-
-The system SHALL provide debug logging when `ORCHESTRATOR_DEBUG=1`.
-
-#### Scenario: Log skipped tests in debug mode
-
-- **GIVEN** `ORCHESTRATOR_DEBUG=1` env var is set
-- **AND** the reporter skips a test
-- **WHEN** the test is processed
-- **THEN** the reporter logs `[Skip] {testId}` to console
-
-#### Scenario: Silent in normal mode
-
-- **GIVEN** `ORCHESTRATOR_DEBUG` env var is not set
-- **AND** the reporter skips a test
-- **WHEN** the test is processed
-- **THEN** the reporter does not log individual skip messages
 
 ### Requirement: Parameterized Test Support
 
-The system SHALL correctly handle `test.each()` parameterized tests.
+The system SHALL correctly handle `test.each()` parameterized tests. Each iteration produces a unique test ID and a unique line in the test-list file.
 
 #### Scenario: Unique ID per parameter set
 
 - **GIVEN** a test defined as `test.each([1, 2, 3])('value %i works', ...)`
 - **WHEN** Playwright generates tests
 - **THEN** each iteration has a unique title: `value 1 works`, `value 2 works`, `value 3 works`
-- **AND** the reporter can filter each iteration independently
+- **AND** each iteration can be assigned to different shards independently
 
-#### Scenario: Filter single iteration
+#### Scenario: Filter single iteration via test-list
 
-- **GIVEN** shard file contains `["math.spec.ts::Math::value 2 works"]`
+- **GIVEN** the test-list file contains `math.spec.ts › Math › value 2 works`
 - **AND** the test uses `test.each([1, 2, 3])('value %i works', ...)`
-- **WHEN** the reporter filters tests
-- **THEN** only `value 2 works` iteration runs
-- **AND** `value 1 works` and `value 3 works` are skipped
+- **WHEN** Playwright runs with `--test-list`
+- **THEN** only `value 2 works` iteration is in the suite tree
+- **AND** `value 1 works` and `value 3 works` are not in the suite tree
 
 ### Requirement: File Affinity Distribution
 
@@ -465,4 +306,109 @@ The system SHALL support a file affinity penalty that discourages splitting test
 - **AND** file affinity penalty is 5s
 - **WHEN** the LPT algorithm evaluates shard assignment
 - **THEN** shard 1 is preferred (effective load 50+10=60) over shard 2 (effective load 48+10+5=63)
+
+### Requirement: Test List Output Format
+
+The `assign` command SHALL include `testListFiles` in its JSON output, containing shard assignments in Playwright's `--test-list` format. File paths in the output SHALL be relative to `config.rootDir` (not `project.testDir`), matching Playwright's `--test-list` path resolution. Each line uses ` › ` (space-surrounded single right-pointing angle quotation mark, U+203A) as the delimiter between file path, describe blocks, and test title.
+
+#### Scenario: JSON output includes testListFiles
+
+- **GIVEN** the `assign` command is executed with `--output-format json`
+- **AND** tests are assigned to shards
+- **WHEN** the output is generated
+- **THEN** the JSON includes a `testListFiles` object mapping shard index to test-list content
+- **AND** each value is a string with one test per line in `path/to/file.spec.ts › Suite › Test` format
+- **AND** file paths are relative to `rootDir`
+
+#### Scenario: testListFiles JSON structure
+
+- **GIVEN** 2 shards with tests assigned
+- **AND** `testDir` is `src/test/e2e` relative to `rootDir`
+- **WHEN** the `assign` command produces JSON output
+- **THEN** `testListFiles` has structure: `{"1": "src/test/e2e/login.spec.ts › Login › should login\nsrc/test/e2e/home.spec.ts › Home › should render\n", "2": "src/test/e2e/checkout.spec.ts › Checkout › should pay\n"}`
+- **AND** each value is a complete, ready-to-write test-list file content
+
+#### Scenario: Convert internal IDs to test-list format (simple project)
+
+- **GIVEN** an internal test ID `login.spec.ts::Login::should login`
+- **AND** `testDir` equals `rootDir`
+- **WHEN** it is converted to test-list format
+- **THEN** the result is `login.spec.ts › Login › should login`
+
+#### Scenario: Convert internal IDs to test-list format (monorepo)
+
+- **GIVEN** an internal test ID `login.spec.ts::Login::should login`
+- **AND** `rootDir` is `/project`
+- **AND** `testDir` is `/project/src/test/e2e`
+- **WHEN** it is converted to test-list format
+- **THEN** the result is `src/test/e2e/login.spec.ts › Login › should login`
+- **AND** the file path is relative to `rootDir`, not `testDir`
+
+#### Scenario: Convert file-level test (no describe block)
+
+- **GIVEN** an internal test ID `simple.spec.ts::should work`
+- **AND** `testDir` equals `rootDir`
+- **WHEN** it is converted to test-list format
+- **THEN** the result is `simple.spec.ts › should work`
+
+#### Scenario: Handle nested describes in test-list format
+
+- **GIVEN** an internal test ID `auth.spec.ts::Auth::OAuth::Google::should redirect`
+- **AND** `testDir` equals `rootDir`
+- **WHEN** it is converted to test-list format
+- **THEN** the result is `auth.spec.ts › Auth › OAuth › Google › should redirect`
+
+#### Scenario: Handle test name containing the › delimiter character
+
+- **GIVEN** an internal test ID `nav.spec.ts::Breadcrumb::should show Home › Settings › Profile`
+- **AND** `testDir` equals `rootDir`
+- **WHEN** it is converted to test-list format
+- **THEN** the result is `nav.spec.ts › Breadcrumb › should show Home › Settings › Profile`
+- **AND** Playwright's parser matches the test correctly because it splits left-to-right and assigns the remainder to the test title
+
+### Requirement: Test Discovery Config Exposure
+
+The test discovery module SHALL expose `rootDir` and `testDir` from the Playwright config alongside the discovered tests. This is needed by the `assign` command to compute the testDir-to-rootDir path prefix for test-list format conversion.
+
+#### Scenario: Discovery returns config paths
+
+- **GIVEN** a Playwright test-list JSON with `config.rootDir = "/project"` and `project.testDir = "/project/src/test/e2e"`
+- **WHEN** the discovery function is called
+- **THEN** it returns the discovered tests AND `rootDir` and `testDir` values
+- **AND** the `assign` command can compute `path.relative(rootDir, testDir) = "src/test/e2e"` as the prefix
+
+### Requirement: Pre-Execution Test Filtering via --test-list
+
+The system SHALL use Playwright's `--test-list` CLI flag for test filtering, removing tests from the suite tree before execution instead of skipping them at runtime. No orchestrator code runs inside Playwright's process.
+
+#### Scenario: Tests removed from suite before execution
+
+- **GIVEN** a shard file in test-list format
+- **WHEN** Playwright runs with `--test-list <shard-file>`
+- **THEN** only tests listed in the file exist in the suite tree
+- **AND** non-listed tests are not present in any reporter's `onBegin` suite
+
+#### Scenario: Clean reports without post-processing
+
+- **GIVEN** Playwright runs with `--test-list <shard-file>`
+- **AND** any reporter is configured (JSON, HTML, blob)
+- **WHEN** the test run completes
+- **THEN** the report contains only tests that were in the shard file
+- **AND** no post-processing or filtering is needed
+
+#### Scenario: Clean merged reports across shards
+
+- **GIVEN** multiple shards each run with their own `--test-list <shard-file>`
+- **AND** each shard uses the blob reporter
+- **WHEN** blob reports are merged with `npx playwright merge-reports`
+- **THEN** the merged report contains each test exactly once
+- **AND** no orchestrator-skipped tests appear
+
+#### Scenario: No orchestrator integration in playwright.config.ts
+
+- **GIVEN** a user adopting the orchestrator
+- **WHEN** they configure their `playwright.config.ts`
+- **THEN** no imports from `@nsxbet/playwright-orchestrator` are needed
+- **AND** only standard Playwright reporters are configured
+- **AND** no fixture wrappers are needed
 

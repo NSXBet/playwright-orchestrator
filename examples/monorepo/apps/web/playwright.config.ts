@@ -5,10 +5,7 @@ export default defineConfig({
   reporter:
     process.env.CI === 'true'
       ? [
-          [
-            '@nsxbet/playwright-orchestrator/reporter',
-            { filterJson: 'playwright-report/results.json' },
-          ],
+          ['list'],
           ['blob'],
           ['html'],
           ['json', { outputFile: 'playwright-report/results.json' }],
@@ -19,7 +16,6 @@ export default defineConfig({
               showAnnotations: false,
               useDetails: true,
               showError: true,
-              includeResults: ['pass', 'fail', 'flaky'],
             },
           ],
         ]

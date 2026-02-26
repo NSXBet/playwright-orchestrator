@@ -13,9 +13,9 @@ inputs:
     required: true
 
 outputs:
-  shard-files:
-    description: JSON object with test/file assignments for all shards
-    value: ${{ steps.assign.outputs.shard-files }}
+  test-list-files:
+    description: JSON object with test-list content per shard (ready for Playwright --test-list)
+    value: ${{ steps.assign.outputs.test-list-files }}
   expected-durations:
     description: JSON object with expected durations for all shards
     value: ${{ steps.assign.outputs.expected-durations }}
@@ -82,7 +82,7 @@ runs:
           echo "::warning::Error output: $RESULT $STDERR_OUTPUT"
           
           echo "use-orchestrator=false" >> $GITHUB_OUTPUT
-          echo "shard-files={}" >> $GITHUB_OUTPUT
+          echo "test-list-files={}" >> $GITHUB_OUTPUT
           echo "expected-durations={}" >> $GITHUB_OUTPUT
           echo "total-tests=0" >> $GITHUB_OUTPUT
           echo "is-optimal=false" >> $GITHUB_OUTPUT
@@ -91,10 +91,10 @@ runs:
 
         # Extract data from result
         IS_OPTIMAL=$(echo "$RESULT" | jq -r ".isOptimal // false")
-        TOTAL_TESTS=$(echo "$RESULT" | jq -r ".totalTests // .totalFiles // 0")
+        TOTAL_TESTS=$(echo "$RESULT" | jq -r ".totalTests // 0")
         
         echo "use-orchestrator=true" >> $GITHUB_OUTPUT
-        echo "shard-files=$(echo "$RESULT" | jq -c '.shards')" >> $GITHUB_OUTPUT
+        echo "test-list-files=$(echo "$RESULT" | jq -c '.testListFiles')" >> $GITHUB_OUTPUT
         echo "expected-durations=$(echo "$RESULT" | jq -c '.expectedDurations')" >> $GITHUB_OUTPUT
         echo "total-tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
         echo "is-optimal=$IS_OPTIMAL" >> $GITHUB_OUTPUT
@@ -105,7 +105,12 @@ runs:
         echo "| Shard | Tests | Expected Duration |" >> $GITHUB_STEP_SUMMARY
         echo "|-------|-------|-------------------|" >> $GITHUB_STEP_SUMMARY
         for i in $(seq 1 $TOTAL_SHARDS); do
-          COUNT=$(echo "$RESULT" | jq -r ".shards.\"$i\" | length")
+          CONTENT=$(echo "$RESULT" | jq -r ".testListFiles.\"$i\" // \"\"")
+          if [ -n "$CONTENT" ]; then
+            COUNT=$(printf '%s' "$CONTENT" | grep -c . || echo "0")
+          else
+            COUNT=0
+          fi
           DURATION=$(echo "$RESULT" | jq -r ".expectedDurations.\"$i\"")
           DURATION_SEC=$((DURATION / 1000))
           echo "| $i | $COUNT | ${DURATION_SEC}s |" >> $GITHUB_STEP_SUMMARY

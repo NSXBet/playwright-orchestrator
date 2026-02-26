@@ -1,6 +1,6 @@
 # Monorepo Example
 
-This example simulates a real monorepo structure (like bet-app) to test orchestrator path resolution and edge cases.
+This example simulates a real monorepo structure to test orchestrator path resolution and edge cases.
 
 ## Structure
 
@@ -8,7 +8,6 @@ This example simulates a real monorepo structure (like bet-app) to test orchestr
 examples/monorepo/
 ├── apps/web/
 │   ├── src/test/e2e/
-│   │   ├── setup.ts                  # Calls withOrchestratorFilter
 │   │   ├── login.spec.ts             # Basic tests
 │   │   ├── home.spec.ts              # Basic tests
 │   │   ├── parameterized.spec.ts     # test.each patterns
@@ -23,18 +22,15 @@ examples/monorepo/
 └── package.json
 ```
 
-## Test Scenarios
+## How It Works
 
-### Path Normalization (Original Bug)
+The orchestrator uses Playwright's `--test-list` flag for pre-execution filtering. No fixture or reporter integration is needed — `playwright.config.ts` uses only standard Playwright reporters.
 
-When orchestrator runs from repo root and Playwright runs from `apps/web/`:
+### Test ID Path Resolution
 
-- **Orchestrator** generates: `apps/web/src/test/e2e/login.spec.ts::Login::test`
-- **Fixture** generates: `src/test/e2e/login.spec.ts::Login::test`
+When `testDir` differs from `rootDir` (common in monorepos), the orchestrator computes a `testDirPrefix` to convert internal test IDs (relative to `testDir`) to Playwright's `--test-list` format (relative to `rootDir`).
 
-The fix normalizes both paths in the allowedTestIds set.
-
-### Edge Cases
+## Edge Cases
 
 | File | Tests |
 |------|-------|
@@ -55,7 +51,3 @@ make act-e2e-monorepo
 ```
 
 This runs the full E2E workflow locally using Act, which simulates the GitHub Actions environment.
-
-## Package Testing
-
-The E2E workflow uses npm tarball for package distribution. Publish validation is handled separately by `make act-publish` which uses Verdaccio.

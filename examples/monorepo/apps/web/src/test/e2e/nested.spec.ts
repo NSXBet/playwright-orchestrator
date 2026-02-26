@@ -1,4 +1,4 @@
-import { expect, test } from './setup.js';
+import { expect, test } from '@playwright/test';
 
 // Edge case: Deeply nested describe blocks (4+ levels)
 test.describe('Level 1', () => {

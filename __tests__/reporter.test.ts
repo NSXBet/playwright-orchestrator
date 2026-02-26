@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { buildTestId, parseTestId } from '../src/core/types.js';
 
-describe('Reporter Test ID Format', () => {
+describe('Test ID Format', () => {
   describe('buildTestId', () => {
     test('builds ID from file and single describe', () => {
       const testId = buildTestId('e2e/login.spec.ts', [

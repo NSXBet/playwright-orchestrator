@@ -52,47 +52,23 @@ src/
 
 ### Test ID Consistency (CRITICAL)
 
-The orchestrator's correctness depends on ALL components generating **IDENTICAL test IDs** for the same test. Inconsistent IDs will cause tests to silently fail to match between shard assignment and runtime filtering.
+The orchestrator's correctness depends on ALL components generating **IDENTICAL test IDs** for the same test. Inconsistent IDs will cause tests to silently fail to match between shard assignment and timing data.
 
 **Single source of truth for path resolution: `project.testDir`**
 
 ALL components MUST use `project.testDir` (not `config.rootDir`) for path resolution:
 - **Discovery**: Uses `project.testDir` from test-list.json config
-- **Fixture**: Uses `testInfo.project.testDir`
-- **Reporter**: Uses `test.parent.project().testDir`
 - **Timing extraction**: Uses `project.testDir` from report config
 
 **NEVER fall back to `process.cwd()` or `config.rootDir`** - this causes path mismatch bugs when `testDir` is a subdirectory (e.g., `testDir: './src/test/e2e'`).
 
-**Two contexts for test ID generation:**
+**Test ID generation** uses `buildTestId` from `src/core/types.ts`:
+- Data comes pre-processed from Playwright's `--list` JSON or report JSON
+- titlePath already excludes project name and filename
 
-1. **Discovery context** (Playwright JSON output):
-   - Use `buildTestId` from `src/core/types.ts`
-   - Data comes pre-processed from Playwright's `--list` JSON
-   - titlePath already excludes project name and filename
-
-2. **Runtime context** (testInfo.titlePath):
-   - Use `buildTestIdFromRuntime` from `src/core/test-id.ts`
-   - Data comes from Playwright's runtime `testInfo.titlePath`
-   - titlePath includes project name, filename, and file paths that must be filtered
-   - **baseDir is REQUIRED** - the function will throw if not provided
-
-**NEVER duplicate the filtering logic. ALWAYS use the shared functions from `src/core/test-id.ts`.**
-
-```typescript
-// CORRECT - Use shared function with REQUIRED baseDir
-import { buildTestIdFromRuntime } from './core/test-id.js';
-const testId = buildTestIdFromRuntime(file, titlePath, { 
-  projectName, 
-  baseDir: testInfo.project.testDir  // REQUIRED - no fallback!
-});
-
-// WRONG - Using process.cwd() or config.rootDir
-const testId = buildTestIdFromRuntime(file, titlePath, { 
-  projectName, 
-  baseDir: process.cwd()  // DON'T DO THIS - causes path mismatch!
-});
-```
+**Test-list format conversion** uses `toTestListFormat` / `toTestListFile` from `src/core/test-id.ts`:
+- Converts internal `::` format to Playwright's ` › ` format
+- Prepends `testDirPrefix` (relative path from rootDir to testDir) for monorepo support
 
 ### No Flaky Assumptions
 
@@ -176,58 +152,40 @@ This means:
 - A single outlier won't dramatically shift estimates
 - Gradual adaptation to changing test durations
 
-### Test Filtering (Custom Reporter)
+### Test Filtering (--test-list)
 
-To run only specific tests in a shard, the orchestrator outputs a JSON file with test IDs. A custom Playwright reporter reads this file and filters tests using exact `Set.has()` matching.
+The orchestrator uses Playwright's `--test-list` CLI flag (Playwright 1.56+) for pre-execution filtering. Tests not in the list are removed from the suite tree **before execution**, so all reporters produce natively clean output.
 
-```typescript
-// playwright.config.ts
-reporter: [
-  ['@nsxbet/playwright-orchestrator/reporter', {
-    filterJson: 'playwright-report/results.json',
-  }],
-  ['json', { outputFile: 'playwright-report/results.json' }],
-  ['html'],
-]
-```
-
-**Reporter options:**
-- `filterJson` (optional): Path to the JSON report file. When set, the reporter rewrites the JSON report in `onExit`, removing specs not assigned to this shard (using test-ID matching against the shard file) and recalculating `.stats`. This prevents timing corruption and report pollution.
+No fixture, reporter, or `playwright.config.ts` changes are needed.
 
 **Test ID Format**: `{relative-path}::{describe}::{test-title}`
 - Path is relative to Playwright's `project.testDir` (NOT `config.rootDir`), with forward slashes
 - Example: `login.spec.ts::Login::should login`
 
-This approach was chosen because:
-- `--grep` has substring collision issues
-- `file:line` breaks parameterized tests
-- CLI arguments have shell escaping problems
-
-See `docs/test-level-reporter.md` for the complete guide.
+**Test-list format**: `{rootDir-relative-path} › {describe} › {test-title}`
+- Converted from internal `::` format to Playwright's `›` format
+- File paths are relative to `rootDir` (not `testDir`), matching Playwright's `--test-list` resolution
 
 ### Monorepo Path Resolution
 
-In monorepos, the orchestrator and fixture may run from different directories:
-- **Orchestrator**: Runs from repo root (e.g., `bet-app/`)
-- **Fixture**: Runs from app directory (e.g., `apps/bet-client/`)
+In monorepos, the orchestrator generates test-list files with rootDir-relative paths:
 
-To ensure consistent test IDs, both use **Playwright's rootDir** from the test-list.json:
-
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Path Resolution                               │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  test-list.json generated from: apps/bet-client/                │
-│  rootDir in JSON config: /full/path/to/repo/apps/bet-client     │
+│  rootDir: /full/path/to/repo/apps/bet-client                    │
+│  testDir: /full/path/to/repo/apps/bet-client/src/test/e2e       │
 │                                                                 │
-│  Orchestrator (CWD: repo root):                                 │
-│  └─ Uses rootDir from JSON → src/test/e2e/login.spec.ts        │
+│  Internal test ID (relative to testDir):                        │
+│  └─ login.spec.ts::Login::should login                          │
 │                                                                 │
-│  Fixture (CWD: apps/bet-client):                                │
-│  └─ path.relative(CWD, file) → src/test/e2e/login.spec.ts      │
+│  Test-list format (relative to rootDir):                        │
+│  └─ src/test/e2e/login.spec.ts › Login › should login           │
 │                                                                 │
-│  Both produce: src/test/e2e/login.spec.ts::Login::test ✓       │
+│  testDirPrefix = path.relative(rootDir, testDir) = src/test/e2e │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -422,11 +380,10 @@ See [docs/external-integration.md](./docs/external-integration.md#cache-strategy
 | Action | Purpose |
 |--------|---------|
 | `setup-orchestrator` | Install and cache the CLI |
-| `orchestrate` | Assign tests to shards (outputs `shard-files` JSON) |
-| `get-shard` | Extract `shard-file` path for reporter-based filtering |
-| `extract-timing` | Extract timing from Playwright reports (requires `shard-file` and `project`) |
+| `orchestrate` | Assign tests to shards (outputs `test-list-files` JSON) |
+| `get-shard` | Write `test-list-file` for Playwright `--test-list` flag |
+| `extract-timing` | Extract timing from Playwright reports (requires `project`) |
 | `merge-timing` | Merge timing data with EMA smoothing |
-| `filter-report` | Remove orchestrator-skipped tests from merged JSON report |
 
 ### Test Discovery
 
@@ -448,18 +405,22 @@ The generated `test-list.json` is then passed to the `assign` command via `--tes
 If orchestration fails, workflows should fallback to Playwright's `--shard` flag:
 
 ```yaml
-# get-shard action outputs shard-file for reporter-based filtering
+# get-shard action outputs test-list-file for --test-list flag
 - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
   id: shard
   with:
-    shard-files: ${{ needs.orchestrate.outputs.shard-files }}
+    test-list-files: ${{ needs.orchestrate.outputs.test-list-files }}
     shard-index: ${{ matrix.shard }}
     shards: 4
 
-# Use shard-file env var for reporter-based filtering
-- run: npx playwright test
-  env:
-    ORCHESTRATOR_SHARD_FILE: ${{ steps.shard.outputs.shard-file }}
+# Use --test-list for pre-execution filtering
+- run: |
+    TEST_LIST_FILE="${{ steps.shard.outputs.test-list-file }}"
+    if [ -n "$TEST_LIST_FILE" ] && [ -f "$TEST_LIST_FILE" ]; then
+      npx playwright test --test-list "$TEST_LIST_FILE"
+    else
+      npx playwright test ${{ steps.shard.outputs.fallback-args }}
+    fi
 ```
 
 ### Cancellation-Aware Steps
