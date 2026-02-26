@@ -1,4 +1,4 @@
-import { expect, test } from './setup.js';
+import { expect, test } from '@playwright/test';
 
 test.describe('Special Characters in Test Names', () => {
   // Edge case: Unicode characters (Japanese)

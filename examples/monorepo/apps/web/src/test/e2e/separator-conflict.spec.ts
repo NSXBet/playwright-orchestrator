@@ -1,4 +1,4 @@
-import { expect, test } from './setup.js';
+import { expect, test } from '@playwright/test';
 
 // Edge case: Test names containing :: which is the orchestrator's separator
 // The orchestrator uses format: {file}::{describe}::{test}

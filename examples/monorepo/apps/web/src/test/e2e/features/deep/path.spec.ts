@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { expect, test } from '../../setup.js';
+import { expect, test } from '@playwright/test';
 
 // Edge case: Tests in deep subdirectory
 // This tests path normalization with nested directories

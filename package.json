@@ -7,12 +7,6 @@
   "types": "dist/index.d.ts",
   "typesVersions": {
     "*": {
-      "reporter": [
-        "./dist/reporter.d.ts"
-      ],
-      "fixture": [
-        "./dist/fixture.d.ts"
-      ],
       "core": [
         "./dist/core/index.d.ts"
       ]
@@ -23,16 +17,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.js"
-    },
-    "./reporter": {
-      "types": "./dist/reporter.d.ts",
-      "import": "./dist/reporter.js",
-      "require": "./dist/reporter.js"
-    },
-    "./fixture": {
-      "types": "./dist/fixture.d.ts",
-      "import": "./dist/fixture.js",
-      "require": "./dist/fixture.js"
     },
     "./core": {
       "types": "./dist/core/index.d.ts",
@@ -99,16 +83,7 @@
     "@biomejs/biome": "2.3.11",
     "@changesets/changelog-github": "^0.5.2",
     "@changesets/cli": "^2.29.8",
-    "@playwright/test": "^1.40.0",
     "@types/node": "22.15.29",
     "typescript": "5.9.3"
-  },
-  "peerDependencies": {
-    "@playwright/test": ">=1.20.0"
-  },
-  "peerDependenciesMeta": {
-    "@playwright/test": {
-      "optional": true
-    }
   }
 }

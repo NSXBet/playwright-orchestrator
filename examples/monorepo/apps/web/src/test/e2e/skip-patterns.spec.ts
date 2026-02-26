@@ -1,4 +1,4 @@
-import { expect, test } from './setup.js';
+import { expect, test } from '@playwright/test';
 
 test.describe('Skip Patterns', () => {
   // Edge case: Skipped test

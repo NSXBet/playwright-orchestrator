@@ -9,6 +9,6 @@
   },
   "devDependencies": {
     "@estruyf/github-actions-reporter": "^1.8.0",
-    "@playwright/test": "1.53.0"
+    "@playwright/test": "1.56.0"
   }
 }
