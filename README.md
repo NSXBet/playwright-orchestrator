@@ -140,7 +140,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: npm ci
 
-      - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
+      - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v2
 
       - uses: actions/cache/restore@v4
         with:
@@ -150,7 +150,7 @@ jobs:
 
       - run: npx playwright test --list --reporter=json > test-list.json
 
-      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
+      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v2
         id: orchestrate
         with:
           test-list: test-list.json
@@ -170,7 +170,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install chromium --with-deps
 
-      - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
+      - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v2
         id: shard
         with:
           test-list-files: ${{ needs.orchestrate.outputs.test-list-files }}
@@ -187,7 +187,7 @@ jobs:
           fi
 ```
 
-See [docs/external-integration.md](./docs/external-integration.md) for complete workflow with timing data persistence.
+See [docs/external-integration.md](./docs/external-integration.md) for complete workflow with timing data persistence, `--last-failed` rerun support, and monorepo usage.
 
 ## CLI Commands
 
