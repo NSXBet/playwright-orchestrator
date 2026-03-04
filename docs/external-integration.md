@@ -20,8 +20,8 @@ The orchestrator provides GitHub Actions that you can reference directly in your
 
 Actions are tagged to match the npm package version:
 
-- `@v0` - Latest v0.x.x (recommended for stability)
-- `@v0.2.0` - Exact version (for reproducibility)
+- `@v2` - Latest v2.x.x (recommended for stability)
+- `@v2.0.0` - Exact version (for reproducibility)
 - `@main` - Latest development (not recommended for production)
 
 ## Workflow Architecture
@@ -39,6 +39,7 @@ The recommended pattern uses **three phases** to avoid redundant orchestration:
 
 - **Efficiency**: Run CKK algorithm once, not N times (one per shard)
 - **Consistency**: All shards get assignments from the same computation
+- **Rerun safety**: On retry, only test jobs re-run — orchestration results are reused, preserving deterministic shard assignments (critical for `--last-failed`)
 - **Simplicity**: Actions handle all parsing and fallback logic
 
 ## Complete Workflow
@@ -75,7 +76,7 @@ jobs:
       - run: npm ci
 
       - name: Setup Orchestrator
-        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v2
 
       # YOU control cache location
       - name: Restore timing cache
@@ -92,7 +93,7 @@ jobs:
 
       - name: Orchestrate tests
         id: orchestrate
-        uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
+        uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v2
         with:
           test-list: test-list.json
           timing-file: timing-data.json
@@ -121,7 +122,7 @@ jobs:
 
       # Action writes test-list file for --test-list flag
       - name: Get shard assignment
-        uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
+        uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v2
         id: shard
         with:
           test-list-files: ${{ needs.orchestrate.outputs.test-list-files }}
@@ -142,11 +143,11 @@ jobs:
       # Extract timing (runs unless cancelled)
       - name: Setup Orchestrator
         if: success() || failure()
-        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v2
 
       - name: Extract timing
         if: success() || failure()
-        uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
+        uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v2
         with:
           report-file: playwright-report/results.json
           output-file: timing-shard-${{ matrix.shard }}.json
@@ -173,7 +174,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Orchestrator
-        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
+        uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v2
 
       - name: Restore timing cache
         uses: actions/cache/restore@v4
@@ -189,7 +190,7 @@ jobs:
           merge-multiple: true
 
       - name: Merge timing data
-        uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v0
+        uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v2
         with:
           existing-file: timing-data.json
           new-files: timing-shard-*.json
@@ -201,6 +202,162 @@ jobs:
           path: timing-data.json
           key: playwright-timing-${{ github.ref_name }}-${{ github.run_id }}
 ```
+
+## Rerun with `--last-failed`
+
+Playwright 1.49+ supports `--last-failed`, which re-runs only tests that failed in the previous attempt. The orchestrator supports this natively — orchestration runs in a separate build job, so shard assignments stay the same across retry attempts.
+
+```
+Attempt 1:  [e2e-build: orchestrate] → [shard 1 ✅] [shard 2 ❌] [shard 3 ✅]
+                                                          ↓ (re-run failed jobs)
+Attempt 2:  [e2e-build: skipped]     →                [shard 2 --last-failed ✅]
+```
+
+### Implementation
+
+Each shard saves its `.last-run.json` as an artifact after every run. On retry, shards download the previous attempt's last-run data, merge the failed tests, and pass `--last-failed` to Playwright.
+
+```yaml
+jobs:
+  # Phase 0: Build + Orchestrate (NOT re-executed on retry)
+  e2e-build:
+    runs-on: ubuntu-24.04
+    outputs:
+      test-list-files: ${{ steps.orchestrate.outputs.test-list-files }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+
+      - uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v2
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: timing-data.json
+          key: playwright-timing-${{ github.ref_name }}
+          restore-keys: playwright-timing-
+
+      - run: npx playwright test --list --reporter=json > test-list.json
+
+      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v2
+        id: orchestrate
+        with:
+          test-list: test-list.json
+          timing-file: timing-data.json
+          shards: 4
+
+  # Phase 1: Run tests (with --last-failed on retry)
+  e2e:
+    needs: [e2e-build]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npx playwright install chromium --with-deps
+
+      - uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v2
+        id: shard
+        with:
+          test-list-files: ${{ needs.e2e-build.outputs.test-list-files }}
+          shard-index: ${{ matrix.shard }}
+          shards: 4
+
+      # --- last-failed support ---
+      - name: Compute previous attempt number
+        if: github.run_attempt > 1
+        id: prev-attempt
+        run: echo "number=$(( ${{ github.run_attempt }} - 1 ))" >> $GITHUB_OUTPUT
+
+      - name: Download previous last-run data
+        if: github.run_attempt > 1
+        id: download-last-run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e2e-last-run-attempt-${{ steps.prev-attempt.outputs.number }}-shard-*
+          merge-multiple: true
+          path: previous-last-run
+        continue-on-error: true
+
+      - name: Merge last-run data for --last-failed
+        if: github.run_attempt > 1 && steps.download-last-run.outcome == 'success'
+        run: |
+          if compgen -G "previous-last-run/last-run-shard-*.json" > /dev/null 2>&1; then
+            mkdir -p test-results
+            jq -s '{ status: "failed", failedTests: [.[].failedTests[]?] | unique }' \
+              previous-last-run/last-run-shard-*.json \
+              > test-results/.last-run.json
+            echo "Merged failed tests for --last-failed:"
+            cat test-results/.last-run.json
+          else
+            echo "No previous last-run data found, will run all tests"
+          fi
+
+      # --- run tests ---
+      - name: Run Playwright tests
+        run: |
+          LAST_FAILED_FLAG=""
+          if [ "${{ github.run_attempt }}" -gt 1 ] && [ -f test-results/.last-run.json ]; then
+            FAILED_COUNT=$(jq '.failedTests | length' test-results/.last-run.json 2>/dev/null || echo 0)
+            if [ "$FAILED_COUNT" -gt 0 ]; then
+              LAST_FAILED_FLAG="--last-failed"
+              echo "::notice::Re-run detected (attempt ${{ github.run_attempt }}), using --last-failed ($FAILED_COUNT previously failed tests)"
+            else
+              echo "::notice::Re-run detected but no failed tests in last-run data — running all tests"
+            fi
+          fi
+
+          TEST_LIST_FILE="${{ steps.shard.outputs.test-list-file }}"
+          if [ -n "$TEST_LIST_FILE" ] && [ -f "$TEST_LIST_FILE" ]; then
+            npx playwright test --test-list "$TEST_LIST_FILE" $LAST_FAILED_FLAG
+          else
+            npx playwright test ${{ steps.shard.outputs.fallback-args }} $LAST_FAILED_FLAG
+          fi
+
+      # --- save last-run for potential rerun ---
+      - name: Save last-run data
+        if: "!cancelled()"
+        run: |
+          if [ -f test-results/.last-run.json ]; then
+            cp test-results/.last-run.json last-run-shard-${{ matrix.shard }}.json
+          fi
+
+      - name: Upload last-run data
+        if: "!cancelled()"
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-last-run-attempt-${{ github.run_attempt }}-shard-${{ matrix.shard }}
+          path: last-run-shard-${{ matrix.shard }}.json
+          retention-days: 7
+          if-no-files-found: ignore
+```
+
+> **Note:** This example focuses on the `--last-failed` steps only. Add timing extraction and merge phases from the [Complete Workflow](#complete-workflow) section for a full setup.
+
+### Key Design Decisions
+
+| Decision | Rationale |
+| --- | --- |
+| `test-list-files` via job outputs | Job outputs persist across attempts — no re-computation needed |
+| Merge **all** shards' last-run data | A shard may need to re-run a test that was originally in a different shard (edge case with `--last-failed` matching) |
+| `failedTests` length guard | Prevents `--last-failed` from silently running zero tests when the `.last-run.json` exists but has no failures |
+| Artifact naming with `e2e-` prefix | Avoids collisions with other workflow artifacts; includes attempt number for multi-retry scenarios |
+| `!cancelled()` for last-run upload | Ensures last-run data is saved even on failure, but not on cancellation |
+
+### Why Orchestration Must Be in a Separate Job
+
+If orchestration runs **inside each shard job** instead, re-running failed jobs causes the orchestrator to recompute assignments. Since the runner environment, caches, or timing data may differ between attempts, shards can get a **different test distribution** on retry. This means `--last-failed` may find no matching tests in the reassigned shard — silently running zero tests.
+
+```
+Attempt 1:  Shard 2 runs test-X → test-X fails
+                                    ↓ (re-run failed jobs)
+Attempt 2:  Shard 2 re-orchestrates → test-X now assigned to Shard 3
+            Shard 2 runs --last-failed → finds nothing → 0 tests run ❌
+```
+
+By keeping orchestration in a separate build job, GitHub Actions skips it on retry, so every shard gets the exact same test distribution as the original attempt.
 
 ## Monorepo Usage
 
@@ -215,7 +372,7 @@ jobs:
         working-directory: apps/web
         run: npx playwright test --list --reporter=json > test-list.json
 
-      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
+      - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v2
         with:
           test-list: apps/web/test-list.json
           timing-file: timing-data.json
@@ -274,7 +431,7 @@ npx playwright test --test-list shard-1.txt --project="chromium"
 Installs and caches the CLI.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v0
+- uses: NSXBet/playwright-orchestrator/.github/actions/setup-orchestrator@v2
   with:
     version: "" # Optional: specific version (default: latest)
 ```
@@ -284,7 +441,7 @@ Installs and caches the CLI.
 Assigns tests to shards.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
+- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v2
   id: orchestrate
   with:
     test-list: test-list.json # Required: path to test list JSON
@@ -307,7 +464,7 @@ Assigns tests to shards.
 Writes a test-list file for a specific shard.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
+- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v2
   id: shard
   with:
     test-list-files: ${{ needs.orchestrate.outputs.test-list-files }}
@@ -327,7 +484,7 @@ Writes a test-list file for a specific shard.
 Extracts timing from Playwright reports.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
+- uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v2
   with:
     report-file: ./results.json # Required: Playwright JSON report
     output-file: ./timing.json # Required: output path
@@ -340,7 +497,7 @@ Extracts timing from Playwright reports.
 Merges timing data with EMA smoothing.
 
 ```yaml
-- uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v0
+- uses: NSXBet/playwright-orchestrator/.github/actions/merge-timing@v2
   with:
     existing-file: "" # Optional: existing timing data
     new-files: "timing-*.json" # Required: space-separated paths/globs

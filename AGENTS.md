@@ -198,7 +198,7 @@ In monorepos, the orchestrator generates test-list files with rootDir-relative p
   working-directory: apps/bet-client  # Same as where tests run
   run: npx playwright test --list --reporter=json > test-list.json
 
-- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
+- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v2
   with:
     test-list: apps/bet-client/test-list.json  # Path from repo root
 ```
@@ -356,7 +356,7 @@ Actions do NOT handle cache/artifacts internally. Users control:
 # Generate test list first
 - run: npx playwright test --list --reporter=json > test-list.json
 
-- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v0
+- uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v2
   with:
     test-list: test-list.json  # Required: pre-generated list
     timing-file: timing-data.json  # Required: timing data
@@ -406,7 +406,7 @@ If orchestration fails, workflows should fallback to Playwright's `--shard` flag
 
 ```yaml
 # get-shard action outputs test-list-file for --test-list flag
-- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v0
+- uses: NSXBet/playwright-orchestrator/.github/actions/get-shard@v2
   id: shard
   with:
     test-list-files: ${{ needs.orchestrate.outputs.test-list-files }}
@@ -430,7 +430,7 @@ Use `if: success() || failure()` instead of `always()`:
 ```yaml
 - name: Extract timing
   if: success() || failure()  # NOT always() - skip on cancel
-  uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v0
+  uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v2
 ```
 
 ### Key Documentation
