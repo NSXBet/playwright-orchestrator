@@ -5,12 +5,12 @@ runs:
   using: composite
   steps:
     - name: Setup mise
-      uses: jdx/mise-action@v2
+      uses: nsx-actions/jdx_mise-action@v2
       with:
         version: 2025.5.6
 
     - name: Setup bun
-      uses: oven-sh/setup-bun@v2
+      uses: nsx-actions/oven-sh_setup-bun@v2
       with:
         bun-version-file: .tool-versions
 

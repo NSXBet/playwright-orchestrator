@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup mise
-        uses: jdx/mise-action@v2
+        uses: nsx-actions/jdx_mise-action@v2
         with:
           experimental: true
 
@@ -33,7 +33,7 @@ jobs:
 
       - name: Create Release Pull Request or Publish
         id: changesets
-        uses: changesets/action@v1
+        uses: nsx-actions/changesets_action@v1
         with:
           publish: bun run release
           version: bun run version
