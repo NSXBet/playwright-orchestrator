@@ -85,5 +85,11 @@
     "@changesets/cli": "^2.29.8",
     "@types/node": "22.15.29",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "brace-expansion": "2.1.0",
+    "semver": "7.8.0",
+    "lru-cache": "11.3.6",
+    "@babel/runtime": "7.29.2"
   }
 }
