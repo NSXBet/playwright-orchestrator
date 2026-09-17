@@ -1,13 +1,8 @@
-import { assignWithCKK } from './ckk-algorithm.js';
-import { getHistoricalDuration } from './discovery.js';
-import { assignWithLPT } from './lpt-algorithm.js';
-import type {
-  AssignResult,
-  ShardPlan,
-  TestWithDuration,
-  TimingData,
-} from './types.js';
-import { DEFAULT_PROJECT_NAME, identityFromKey, identityKey } from './types.js';
+import { assignWithCKK } from "./ckk-algorithm.js";
+import { getHistoricalDuration } from "./discovery.js";
+import { assignWithLPT } from "./lpt-algorithm.js";
+import type { AssignResult, ShardPlan, TestWithDuration, TimingData } from "./types.js";
+import { DEFAULT_PROJECT_NAME, identityFromKey, identityKey } from "./types.js";
 
 /** Default duration for tests with no history (30s). */
 export const DEFAULT_TEST_DURATION = 30000;
@@ -23,7 +18,7 @@ export interface AssignOptions {
    * 'file': atomicity unit = whole file; every test in an assigned file
    * runs in the same shard. Duration per file = sum of its tests.
    */
-  level?: 'test' | 'file';
+  level?: "test" | "file";
 }
 
 /**
@@ -67,8 +62,8 @@ function estimateDuration(timings: TimingData, id: TestWithDuration): number {
 
 export function assignShards(opts: AssignOptions): AssignResult {
   const { shards } = opts;
-  if (shards < 1) throw new RangeError('shards must be >= 1');
-  return opts.level === 'file' ? assignFileLevel(opts) : assignTestLevel(opts);
+  if (shards < 1) throw new RangeError("shards must be >= 1");
+  return opts.level === "file" ? assignFileLevel(opts) : assignTestLevel(opts);
 }
 
 /**
@@ -81,10 +76,7 @@ function assignFileLevel(opts: AssignOptions): AssignResult {
   const { tests, shards } = opts;
 
   // Group tests by file, filling missing per-test durations first.
-  const byFile = new Map<
-    string,
-    { file: string; tests: TestWithDuration[]; duration: number }
-  >();
+  const byFile = new Map<string, { file: string; tests: TestWithDuration[]; duration: number }>();
   for (const t of tests) {
     const duration = opts.timings
       ? (getHistoricalDuration(opts.timings, t) ?? DEFAULT_TEST_DURATION)
@@ -108,9 +100,7 @@ function assignFileLevel(opts: AssignOptions): AssignResult {
     shards,
   );
 
-  const testsByFile = new Map(
-    [...byFile.values()].map((f) => [f.file, f.tests]),
-  );
+  const testsByFile = new Map([...byFile.values()].map((f) => [f.file, f.tests]));
   const shardPlans: ShardPlan[] = assignments.map((a) => {
     const selection: Array<{ file: string; fullName: string }> = [];
     const testIds: string[] = [];
@@ -142,7 +132,7 @@ function assignFileLevel(opts: AssignOptions): AssignResult {
       total > 0 && balanced > 0
         ? Math.max(0, Math.round((1 - total / shards / balanced) * 100))
         : null,
-    level: 'file',
+    level: "file",
   };
 }
 
@@ -201,11 +191,7 @@ function assignTestLevel(opts: AssignOptions): AssignResult {
   });
   const assignedCount = ckk.assignments.reduce(
     (s, a) =>
-      s +
-      a.tests.reduce(
-        (s2, t) => s2 + ((t as unknown as { count: number }).count ?? 1),
-        0,
-      ),
+      s + a.tests.reduce((s2, t) => s2 + ((t as unknown as { count: number }).count ?? 1), 0),
     0,
   );
   const unassigned = assignedCount < tests.length ? timed : [];
@@ -219,10 +205,8 @@ function assignTestLevel(opts: AssignOptions): AssignResult {
     unassigned,
     totalTests: tests.length,
     estimatedSavings:
-      ideal > 0 && balanced > 0
-        ? Math.max(0, Math.round((1 - ideal / balanced) * 100))
-        : null,
-    level: 'test',
+      ideal > 0 && balanced > 0 ? Math.max(0, Math.round((1 - ideal / balanced) * 100)) : null,
+    level: "test",
   };
 }
 
@@ -238,26 +222,39 @@ export function verifyShardRun(params: {
   shard: number;
 }): string[] {
   const key = (f: string, n: string) => `${f}::${n}`;
-  const expectedSet = new Set(
-    params.expected.map((e) => key(e.file, e.fullName)),
-  );
-  const executedSet = new Set(
-    params.executed.map((e) => key(e.file, e.fullName)),
-  );
+  const expected = countByKey(params.expected, (item) => key(item.file, item.fullName));
+  const executed = countByKey(params.executed, (item) => key(item.file, item.fullName));
   const problems: string[] = [];
   for (const e of params.expected) {
-    if (!executedSet.has(key(e.file, e.fullName))) {
+    const id = key(e.file, e.fullName);
+    const available = executed.get(id) ?? 0;
+    if (available > 0) {
+      executed.set(id, available - 1);
+    } else {
       problems.push(
         `shard ${params.shard}: expected test was NOT executed: "${e.fullName}" (${e.file})`,
       );
     }
   }
   for (const x of params.executed) {
-    if (!expectedSet.has(key(x.file, x.fullName))) {
+    const id = key(x.file, x.fullName);
+    const available = expected.get(id) ?? 0;
+    if (available > 0) {
+      expected.set(id, available - 1);
+    } else {
       problems.push(
         `shard ${params.shard}: unexpected test WAS executed: "${x.fullName}" (${x.file})`,
       );
     }
   }
   return problems;
+}
+
+function countByKey<T>(values: T[], key: (value: T) => string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const id = key(value);
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
 }

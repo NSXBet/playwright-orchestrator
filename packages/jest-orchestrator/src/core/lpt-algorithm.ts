@@ -1,17 +1,15 @@
-import type { ShardAssignment, TestWithDuration } from './types.js';
+import type { ShardAssignment, TestWithDuration } from "./types.js";
 
 /**
  * Longest Processing Time First (LPT): sort desc, always give the next
  * test to the currently-lightest shard. O(n log n + n log k).
  */
-export function assignWithLPT(
-  tests: TestWithDuration[],
-  numShards: number,
-): ShardAssignment[] {
-  const shards: ShardAssignment[] = Array.from(
-    { length: numShards },
-    (_, i) => ({ shard: i + 1, tests: [], expectedDuration: 0 }),
-  );
+export function assignWithLPT(tests: TestWithDuration[], numShards: number): ShardAssignment[] {
+  const shards: ShardAssignment[] = Array.from({ length: numShards }, (_, i) => ({
+    shard: i + 1,
+    tests: [],
+    expectedDuration: 0,
+  }));
   const sorted = [...tests].sort((a, b) => b.duration - a.duration);
   let rr = 0; // round-robin cursor for load ties
   for (const test of sorted) {

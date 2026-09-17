@@ -7,5 +7,5 @@
  * bidirectional verification that executed == assigned.
  */
 
-export * from './core/index.js';
-export const VERSION = '0.1.0';
+export * from "./core/index.js";
+export const VERSION = "0.1.0";

@@ -1,5 +1,5 @@
-import * as fs from 'node:fs';
-import { Command, Flags } from '@oclif/core';
+import * as fs from "node:fs";
+import { Command, Flags } from "@oclif/core";
 import {
   emptyTimingData,
   identityKey,
@@ -9,39 +9,39 @@ import {
   type ShardTimingArtifact,
   saveTimingDataFile,
   type TimingData,
-} from '../core/index.js';
+} from "../core/index.js";
 
 export default class MergeTiming extends Command {
   static override description =
-    'Merge per-shard timing artifacts into the store using EMA; optionally prune stale entries';
+    "Merge per-shard timing artifacts into the store using EMA; optionally prune stale entries";
 
   static override examples = [
-    '<%= config.bin %> merge-timing --existing jest-timings.json --new shard-1-timing.json shard-2-timing.json --output jest-timings.json',
-    '<%= config.bin %> merge-timing --new shard-1-timing.json --output jest-timings.json --prune-manifest tests.json',
+    "<%= config.bin %> merge-timing --existing jest-timings.json --new shard-1-timing.json shard-2-timing.json --output jest-timings.json",
+    "<%= config.bin %> merge-timing --new shard-1-timing.json --output jest-timings.json --prune-manifest tests.json",
   ];
 
   static override flags = {
     existing: Flags.string({
-      char: 'e',
-      description: 'Path to existing timing store JSON (optional)',
+      char: "e",
+      description: "Path to existing timing store JSON (optional)",
     }),
     new: Flags.string({
-      char: 'n',
-      description: 'Paths to new timing artifact files',
+      char: "n",
+      description: "Paths to new timing artifact files",
       multiple: true,
       required: true,
     }),
     output: Flags.string({
-      char: 'o',
-      description: 'Path to write merged timing store',
+      char: "o",
+      description: "Path to write merged timing store",
       required: true,
     }),
     alpha: Flags.string({
-      description: 'EMA smoothing factor (0-1)',
-      default: '0.3',
+      description: "EMA smoothing factor (0-1)",
+      default: "0.3",
     }),
-    'prune-manifest': Flags.string({
-      description: 'Discovery manifest; entries absent from it are pruned',
+    "prune-manifest": Flags.string({
+      description: "Discovery manifest; entries absent from it are pruned",
     }),
   };
 
@@ -57,15 +57,13 @@ export default class MergeTiming extends Command {
       : emptyTimingData();
 
     const artifacts: ShardTimingArtifact[] = flags.new.map((f) =>
-      JSON.parse(fs.readFileSync(f, 'utf8')),
+      JSON.parse(fs.readFileSync(f, "utf8")),
     );
 
     let merged = mergeTimingData(existing, artifacts, alpha);
 
-    if (flags['prune-manifest']) {
-      const manifest = JSON.parse(
-        fs.readFileSync(flags['prune-manifest'], 'utf8'),
-      ) as {
+    if (flags["prune-manifest"]) {
+      const manifest = JSON.parse(fs.readFileSync(flags["prune-manifest"], "utf8")) as {
         tests: Array<{ project: string; file: string; fullName: string }>;
       };
       const currentKeys = new Set(
@@ -85,8 +83,6 @@ export default class MergeTiming extends Command {
       (s, p) => s + Object.keys(p.files).length,
       0,
     );
-    this.log(
-      `Merged ${artifacts.length} artifacts (${total} entries) -> ${flags.output}`,
-    );
+    this.log(`Merged ${artifacts.length} artifacts (${total} entries) -> ${flags.output}`);
   }
 }

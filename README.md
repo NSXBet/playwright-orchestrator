@@ -4,9 +4,10 @@ This repository is the Bun/Turborepo workspace for NSXBet's Playwright test-dist
 
 ## Packages
 
-| Package                                                                           | Description                                                                 |
-| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [`@nsxbet/playwright-orchestrator`](./packages/playwright-orchestrator/README.md) | Distributes Playwright tests across CI shards using historical timing data. |
+| Package                                                                           | Description                                                                          |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [`@nsxbet/playwright-orchestrator`](./packages/playwright-orchestrator/README.md) | Distributes Playwright tests across CI shards using historical timing data.          |
+| [`@nsxbet/jest-orchestrator`](./packages/jest-orchestrator/README.md)             | Distributes Jest 30+ tests with exact per-test selection and historical timing data. |
 
 ## Development
 
@@ -33,8 +34,9 @@ Use `make help` to list local validation, packaging, example, and Act targets.
 
 ```text
 packages/
-  playwright-orchestrator/  # Publishable CLI package
-.github/actions/            # Public composite GitHub Actions
+  playwright-orchestrator/  # Publishable Playwright CLI package
+  jest-orchestrator/        # Publishable Jest CLI package
+.github/actions/            # Public composite GitHub Actions (including jest-*)
 .github/workflows/          # Repository CI, release, and E2E workflows
 examples/                   # Consumer and monorepo test fixtures
 openspec/                   # Specs and approved change proposals
@@ -42,4 +44,4 @@ openspec/                   # Specs and approved change proposals
 
 ## Publishing
 
-The workspace root is private. Changesets version and publish only `@nsxbet/playwright-orchestrator`, which remains a public npm package. See the [package README](./packages/playwright-orchestrator/README.md) for installation and usage.
+The workspace root is private. Changesets version and publish `@nsxbet/playwright-orchestrator` and `@nsxbet/jest-orchestrator` as public npm packages. See each package README for installation and usage.

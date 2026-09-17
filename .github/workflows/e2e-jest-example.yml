@@ -1,0 +1,230 @@
+name: Jest Orchestrator Example
+
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: Number of shards
+        required: false
+        default: "3"
+      level:
+        description: Assignment granularity (test | file)
+        required: false
+        default: "test"
+
+jobs:
+  # Phase 1: Orchestrate (assign tests to shards)
+  orchestrate:
+    name: Orchestrate
+    runs-on: ubuntu-24.04
+    outputs:
+      assignment-file: ${{ steps.orchestrate.outputs.assignment-file }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build orchestrator
+        run: bun run build
+
+      - name: Install CLI globally
+        run: |
+          echo "$HOME/.npm-global/bin" >> $GITHUB_PATH
+          npm config set prefix ~/.npm-global
+          npm install -g ./packages/jest-orchestrator
+          "$HOME/.npm-global/bin/jest-orchestrator" --version
+
+      - name: Install example dependencies
+        working-directory: examples/basic
+        run: npm install
+
+      - name: Generate shard matrix
+        id: matrix
+        run: |
+          SHARDS="${{ github.event.inputs.shards || '3' }}"
+          MATRIX=$(seq 1 $SHARDS | jq -R . | jq -sc '{shard: .}')
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
+      - name: Restore timing cache (with fallback to main)
+        id: timing-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: timing-data.json
+          key: jest-orchestrator-timing-${{ github.ref_name }}-${{ github.event.inputs.level || 'test' }}-${{ github.run_id }}
+          restore-keys: |
+            jest-orchestrator-timing-${{ github.ref_name }}-
+            jest-orchestrator-timing-main-
+
+      - name: Report cache status
+        run: |
+          echo "### Cache Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          MATCHED="${{ steps.timing-cache.outputs.cache-matched-key }}"
+          if [ "${{ steps.timing-cache.outputs.cache-hit }}" = "true" ]; then
+            echo "**CACHE HIT (exact)** — timing data restored for balanced sharding" >> $GITHUB_STEP_SUMMARY
+            echo "E2E-INFO: cache HIT (exact) (key=$MATCHED)"
+          elif [ -n "$MATCHED" ]; then
+            echo "**CACHE RESTORED (restore-key)** — stale-but-valid timing data" >> $GITHUB_STEP_SUMMARY
+            echo "E2E-INFO: cache RESTORED via restore-key (matched=$MATCHED)"
+          else
+            echo "**CACHE MISS** — first run, distribution is blind (estimates only)" >> $GITHUB_STEP_SUMMARY
+            echo "E2E-INFO: cache MISS (starting cold)"
+          fi
+
+      - name: Orchestrate tests
+        id: orchestrate
+        uses: ./.github/actions/jest-orchestrate
+        with:
+          root: examples/basic
+          timing-file: timing-data.json
+          shards: ${{ github.event.inputs.shards || '3' }}
+          level: ${{ github.event.inputs.level || 'test' }}
+
+      - name: Upload assignment artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestration-assignment
+          path: ${{ github.workspace }}/.orchestration/
+          retention-days: 1
+          include-hidden-files: true
+
+  # Phase 2: Run tests in parallel shards
+  test:
+    name: Test Shard ${{ matrix.shard }}
+    needs: orchestrate
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.orchestrate.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build orchestrator
+        run: bun run build
+
+      - name: Install CLI
+        run: |
+          npm config set prefix ~/.npm-global
+          npm install -g ./packages/jest-orchestrator
+          echo "$HOME/.npm-global/bin" >> $GITHUB_PATH
+          "$HOME/.npm-global/bin/jest-orchestrator" --version
+
+      - name: Install example dependencies
+        working-directory: examples/basic
+        run: npm install
+
+      - name: Download assignment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: orchestration-assignment
+          path: .orchestration
+
+      - name: Get shard assignment
+        id: shard
+        uses: ./.github/actions/jest-get-shard
+        with:
+          assignment-file: .orchestration/assignment.json
+          shard-index: ${{ matrix.shard }}
+
+      - name: Run Jest tests for this shard
+        working-directory: examples/basic
+        run: |
+          jest-orchestrator run-shard \
+            --root . \
+            --assignment "${{ github.workspace }}/.orchestration/assignment.json" \
+            --shard ${{ matrix.shard }} \
+            --output shard-timing-${{ matrix.shard }}.json \
+            --report-output report-shard-${{ matrix.shard }}.json || SHARD_EXIT=$?
+          # Verification failures exit 2: keep artifact flow alive so
+          # timing merge still runs, but mark the job failed.
+          exit $SHARD_EXIT
+
+      - name: Annotate failures and append shard summary
+        if: success() || failure()
+        working-directory: examples/basic
+        run: |
+          REPORT="report-shard-${{ matrix.shard }}.json"
+          if [ -f "$REPORT" ]; then
+            jest-orchestrator annotate \
+              --report "$REPORT" \
+              --shard ${{ matrix.shard }} \
+              --summary-append "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::no report for shard ${{ matrix.shard }}, skipping annotations"
+          fi
+
+      - name: Upload timing artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-timing-${{ matrix.shard }}
+          path: examples/basic/shard-timing-${{ matrix.shard }}.json
+          retention-days: 1
+
+  # Phase 3: Merge timing data from all shards and verify everything
+  merge:
+    name: Merge Timing
+    needs: test
+    runs-on: ubuntu-24.04
+    if: success() || failure()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build orchestrator
+        run: bun run build
+
+      - name: Install CLI
+        run: |
+          npm config set prefix ~/.npm-global
+          npm install -g ./packages/jest-orchestrator
+          echo "$HOME/.npm-global/bin" >> $GITHUB_PATH
+          "$HOME/.npm-global/bin/jest-orchestrator" --version
+
+      - name: Download all timing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shard-timing-*
+          merge-multiple: true
+          path: timing-artifacts
+
+      - name: Download assignment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: orchestration-assignment
+          path: .orchestration
+
+      - name: Merge timing data
+        uses: ./.github/actions/jest-merge-timing
+        with:
+          new-files: timing-artifacts/shard-timing-*.json
+          output-file: timing-data.json
+          manifest: .orchestration/manifest.json
+
+      - name: Assert all e2e guarantees
+        env:
+          LEVEL: ${{ github.event.inputs.level || 'test' }}
+        run: bash scripts/verify-jest-e2e-assertions.sh
+
+      - name: Save timing cache for next run
+        uses: actions/cache/save@v4
+        with:
+          path: timing-data.json
+          key: jest-orchestrator-timing-${{ github.ref_name }}-${{ github.event.inputs.level || 'test' }}-${{ github.run_id }}
+
+      - name: Show timing data
+        run: |
+          echo "=== Merged Timing Data ==="
+          jq '[.projects[].files[]] | length' timing-data.json
+          echo "Timing store written for the next run"

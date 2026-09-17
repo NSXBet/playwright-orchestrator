@@ -1,0 +1,103 @@
+name: Orchestrate Jest Tests
+description: Discover tests and assign them to shards using historical timing data (storage-agnostic)
+
+inputs:
+  root:
+    description: Project root to run jest in (working directory of the target tests)
+    required: true
+  timing-file:
+    description: Path to timing data JSON file. Required for optimal distribution.
+    required: true
+  shards:
+    description: Total number of shards
+    required: true
+  level:
+    description: Assignment granularity (test | file)
+    required: false
+    default: test
+  jest-args:
+    description: Extra args passed to jest during discovery (e.g. --config)
+    required: false
+    default: ""
+
+outputs:
+  assignment-file:
+    description: Path to the assignment JSON consumed by get-shard
+    value: ${{ steps.assign.outputs.assignment-file }}
+  total-tests:
+    description: Total number of discovered tests
+    value: ${{ steps.assign.outputs.total-tests }}
+
+runs:
+  using: composite
+  steps:
+    - name: Discover and assign tests to shards
+      id: assign
+      shell: bash
+      working-directory: ${{ inputs.root }}
+      run: |
+        TIMING_FILE="${{ inputs.timing-file }}"
+        TOTAL_SHARDS="${{ inputs.shards }}"
+
+        # Resolve timing file path relative to the workflow root when given
+        TIMING_ARG=""
+        if [ -n "$TIMING_FILE" ] && [ -f "${{ github.workspace }}/$TIMING_FILE" ]; then
+          TIMING_ARG="--timings ${{ github.workspace }}/$TIMING_FILE"
+          echo "Using timing data from $TIMING_FILE"
+        else
+          echo "::notice::Timing file not found ($TIMING_FILE), first run is blind"
+        fi
+
+        # jest-args come space-split from the input
+        read -r -a JEST_ARGS <<< "${{ inputs.jest-args }}"
+
+        mkdir -p "${{ github.workspace }}/.orchestration"
+        RESULT_FILE=$(mktemp)
+        set +e
+        jest-orchestrator discover --root . --output "${{ github.workspace }}/.orchestration/manifest.json" "${JEST_ARGS[@]}"
+        DISCOVER_EXIT=$?
+        set -e
+        if [ $DISCOVER_EXIT -ne 0 ]; then
+          echo "::error::jest-orchestrator discover failed (exit $DISCOVER_EXIT)"
+          exit 1
+        fi
+
+        set +e
+        jest-orchestrator assign \
+          --manifest "${{ github.workspace }}/.orchestration/manifest.json" \
+          $TIMING_ARG \
+          --shards "$TOTAL_SHARDS" \
+          --level "${{ inputs.level }}" \
+          --output "$RESULT_FILE"
+        ASSIGN_EXIT=$?
+        set -e
+        if [ $ASSIGN_EXIT -ne 0 ] || ! jq -e '.shards' "$RESULT_FILE" > /dev/null 2>&1; then
+          echo "::error::jest-orchestrator assign failed (exit $ASSIGN_EXIT)"
+          exit 1
+        fi
+
+        TOTAL=$(jq '.totalTests' "$RESULT_FILE")
+        echo "total-tests=$TOTAL" >> $GITHUB_OUTPUT
+
+        # Stable workspace path: mktemp paths die with the job container
+        OUT_DIR="${{ github.workspace }}/.orchestration"
+        mkdir -p "$OUT_DIR"
+        ASSIGNMENT="$OUT_DIR/assignment.json"
+        cp "$RESULT_FILE" "$ASSIGNMENT"
+        rm -f "$RESULT_FILE"
+        echo "assignment-file=$ASSIGNMENT" >> $GITHUB_OUTPUT
+
+        # Log summary
+        echo "### Orchestrator Assignment" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Shard | Files | Tests | Expected Duration |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|-------|-------|-------------------|" >> $GITHUB_STEP_SUMMARY
+        jq -c '.shards[]' "$ASSIGNMENT" | while read -r SHARD_JSON; do
+          N=$(echo "$SHARD_JSON" | jq '.shard')
+          FILES=$(echo "$SHARD_JSON" | jq '.files | length')
+          COUNT=$(echo "$SHARD_JSON" | jq '.testIds | length')
+          DURATION=$(echo "$SHARD_JSON" | jq '.expectedDuration')
+          echo "| $N | $FILES | $COUNT | $((DURATION / 1000))s |" >> $GITHUB_STEP_SUMMARY
+        done
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Total**: $TOTAL tests" >> $GITHUB_STEP_SUMMARY

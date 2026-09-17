@@ -7,9 +7,11 @@
   "scripts": {
     "test": "playwright test",
     "test:list": "playwright test --list --reporter=json",
-    "report": "playwright show-report"
+    "report": "playwright show-report",
+    "test:jest": "jest --config jest.config.js"
   },
   "devDependencies": {
-    "@playwright/test": "1.56.0"
+    "@playwright/test": "1.56.0",
+    "jest": "30.2.0"
   }
 }

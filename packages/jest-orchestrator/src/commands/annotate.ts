@@ -1,6 +1,6 @@
-import * as fs from 'node:fs';
-import { Command, Flags } from '@oclif/core';
-import type { JestJsonReport } from '../core/types.js';
+import * as fs from "node:fs";
+import { Command, Flags } from "@oclif/core";
+import type { JestJsonReport } from "../core/types.js";
 
 /**
  * Convert a Jest JSON report into GitHub Actions annotations
@@ -21,7 +21,7 @@ function bestFrame(testFile: string, messages: string[]): FailureFrame | null {
   const frames: FailureFrame[] = [];
   const re = /\(([^:()]+\.spec\.[tj]sx?):(\d+):(\d+)\)/;
   for (const msg of messages) {
-    for (const line of msg.split('\n')) {
+    for (const line of msg.split("\n")) {
       const m = re.exec(line);
       if (m?.[1] && m[2]) {
         frames.push({ file: m[1], line: Number(m[2]) });
@@ -29,15 +29,13 @@ function bestFrame(testFile: string, messages: string[]): FailureFrame | null {
     }
   }
   if (frames.length === 0) return null;
-  const inFile = frames.find(
-    (f) => f.file.endsWith(testFile) || testFile.endsWith(f.file),
-  );
+  const inFile = frames.find((f) => f.file.endsWith(testFile) || testFile.endsWith(f.file));
   return inFile ?? frames[0] ?? null;
 }
 
 function firstMessage(messages: string[]): string {
-  const raw = messages[0] ?? 'test failed';
-  const first = raw.split('\n')[0] ?? raw;
+  const raw = messages[0] ?? "test failed";
+  const first = raw.split("\n")[0] ?? raw;
   return first.slice(0, 300);
 }
 
@@ -47,36 +45,33 @@ function firstMessage(messages: string[]): string {
  * inside backticks.
  */
 function sanitize(text: string): string {
-  return text.replaceAll(/[\r\n]+/g, ' ').replaceAll('|', '\\|');
+  return text.replaceAll(/[\r\n]+/g, " ").replaceAll("|", "\\|");
 }
 
 export default class Annotate extends Command {
   static override description =
-    'Convert a Jest JSON report into GitHub Actions annotations and a job summary (run-shard --report-output file)';
+    "Convert a Jest JSON report into GitHub Actions annotations and a job summary (run-shard --report-output file)";
 
   static override examples = [
-    '<%= config.bin %> annotate --report report-shard-1.json --summary-append summary.md',
+    "<%= config.bin %> annotate --report report-shard-1.json --summary-append summary.md",
   ];
 
   static override flags = {
     report: Flags.string({
-      description: 'Path to the Jest JSON report',
+      description: "Path to the Jest JSON report",
       required: true,
     }),
-    'summary-append': Flags.string({
-      description:
-        'Append a markdown summary table to this file (use $GITHUB_STEP_SUMMARY)',
+    "summary-append": Flags.string({
+      description: "Append a markdown summary table to this file (use $GITHUB_STEP_SUMMARY)",
     }),
     shard: Flags.string({
-      description: 'Shard label shown in the summary heading',
+      description: "Shard label shown in the summary heading",
     }),
   };
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Annotate);
-    const report = JSON.parse(
-      fs.readFileSync(flags.report, 'utf8'),
-    ) as JestJsonReport;
+    const report = JSON.parse(fs.readFileSync(flags.report, "utf8")) as JestJsonReport;
 
     const rows: string[] = [];
     let passed = 0;
@@ -92,19 +87,19 @@ export default class Annotate extends Command {
       // author skips. Inside a 'focused' suite, a pending is a
       // pattern-missed test; author test.skip is indistinguishable from
       // pattern-missed per row, so both are 'not executed here'.
-      const suiteRan = suite.status !== 'skipped';
+      const suiteRan = suite.status !== "skipped";
       for (const a of suite.assertionResults) {
-        if (a.status === 'passed') {
+        if (a.status === "passed") {
           passed++;
           continue;
         }
-        if (a.status === 'todo') {
+        if (a.status === "todo") {
           skipped++;
           rows.push(`| ⊘ todo | \`${a.fullName}\` | author-declared todo |`);
           continue;
         }
-        if (a.status === 'pending') {
-          if (suiteRan && suite.status === 'focused') {
+        if (a.status === "pending") {
+          if (suiteRan && suite.status === "focused") {
             notSelected++;
           } else {
             skipped++;
@@ -115,13 +110,10 @@ export default class Annotate extends Command {
         const msg = firstMessage(a.failureMessages ?? []);
         // Primary: jest's own location (needs --testLocationInResults,
         // which run-shard always passes). Fallback: best stack frame.
-        const line =
-          a.location?.line ?? bestFrame(absFile, a.failureMessages ?? [])?.line;
+        const line = a.location?.line ?? bestFrame(absFile, a.failureMessages ?? [])?.line;
         if (line) {
-          const rel = sanitize(absFile.replace(`${process.cwd()}/`, ''));
-          this.log(
-            `::error file=${rel},line=${line}::${sanitize(a.fullName)} — ${sanitize(msg)}`,
-          );
+          const rel = sanitize(absFile.replace(`${process.cwd()}/`, ""));
+          this.log(`::error file=${rel},line=${line}::${sanitize(a.fullName)} — ${sanitize(msg)}`);
         } else {
           this.log(`::error::${sanitize(a.fullName)} — ${sanitize(msg)}`);
         }
@@ -129,19 +121,19 @@ export default class Annotate extends Command {
       }
     }
 
-    if (flags['summary-append']) {
+    if (flags["summary-append"]) {
       const total = report.numTotalTests;
       const summary = [
-        `### Jest Results (shard ${flags.shard ?? 'n/a'})`,
-        '',
+        `### Jest Results (shard ${flags.shard ?? "n/a"})`,
+        "",
         `| Result | Test | Message |`,
         `|--------|------|---------|`,
         ...rows,
-        '',
+        "",
         `**${passed} passed**, ${failed} failed, ${skipped} skipped/todo, ${notSelected} not selected in this shard, ${total} total`,
-        '',
-      ].join('\n');
-      fs.appendFileSync(flags['summary-append'], summary);
+        "",
+      ].join("\n");
+      fs.appendFileSync(flags["summary-append"], summary);
     }
 
     this.log(

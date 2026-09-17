@@ -77,7 +77,7 @@ jobs:
     name: Build
     runs-on: ubuntu-24.04
     outputs:
-      orchestrator-affected: ${{ steps.affected.outputs.orchestrator-affected }}
+      publish-matrix: ${{ steps.affected.outputs.publish-matrix }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,7 +87,7 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Detect affected package
+      - name: Detect publishable affected packages
         id: affected
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -95,19 +95,15 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" != "pull_request" ]; then
-            echo "orchestrator-affected=true" >> "$GITHUB_OUTPUT"
+            echo 'publish-matrix={"include":[{"package":"playwright-orchestrator","bin":"playwright-orchestrator"},{"package":"jest-orchestrator","bin":"jest-orchestrator"}]}' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
           FILTER="...[origin/${BASE_REF}...HEAD]"
           bunx turbo run build --filter="$FILTER" --dry-run=json > affected.json
-
-          if jq -e 'any(.tasks[]; .taskId == "@nsxbet/playwright-orchestrator#build" and .command != "<NONEXISTENT>")' affected.json > /dev/null; then
-            echo "orchestrator-affected=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "orchestrator-affected=false" >> "$GITHUB_OUTPUT"
-          fi
+          MATRIX=$(jq -c '{include: [.tasks[] | select(.command != "<NONEXISTENT>") | select(.taskId == "@nsxbet/playwright-orchestrator#build" or .taskId == "@nsxbet/jest-orchestrator#build") | .taskId | sub("^@nsxbet/"; "") | sub("#build$"; "") | {package: ., bin: .}] | unique_by(.package) | map(if .package == "playwright-orchestrator" then .bin = "playwright-orchestrator" else .bin = "jest-orchestrator" end)}' affected.json)
+          echo "publish-matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
       - name: Build
         env:
@@ -123,31 +119,22 @@ jobs:
           fi
 
   test-publish:
-    name: Test Publish
+    name: Test Publish (${{ matrix.package }})
     runs-on: ubuntu-24.04
     needs: [build]
-    if: github.event_name != 'pull_request' || needs.build.outputs.orchestrator-affected == 'true'
+    if: needs.build.outputs.publish-matrix != '{"include":[]}'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.build.outputs.publish-matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Build
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
-            bun run build -- --filter="...[origin/${BASE_REF}...HEAD]"
-          else
-            bun run build
-          fi
+      - name: Build package
+        run: bun run build -- --filter=@nsxbet/${{ matrix.package }}
 
       - name: Start Verdaccio
         run: |
@@ -156,15 +143,14 @@ jobs:
           verdaccio --config verdaccio/config.yaml &
           sleep 5
 
-          # Setup npm to use Verdaccio with basic auth
           AUTH_TOKEN=$(echo -n 'test:test' | base64)
           echo "registry=http://localhost:4873/" > ~/.npmrc
           echo "//localhost:4873/:_auth=$AUTH_TOKEN" >> ~/.npmrc
           echo "//localhost:4873/:always-auth=true" >> ~/.npmrc
 
       - name: Publish to Verdaccio
+        working-directory: packages/${{ matrix.package }}
         run: |
-          cd packages/playwright-orchestrator
           npm pkg set version=0.0.0-test.${{ github.run_id }}
           npm pkg delete publishConfig
           npm publish --tag test --registry http://localhost:4873
@@ -174,5 +160,5 @@ jobs:
         run: |
           mkdir -p /tmp/test-install && cd /tmp/test-install
           npm init -y
-          npm install @nsxbet/playwright-orchestrator@0.0.0-test.${{ github.run_id }} --registry http://localhost:4873
-          npx playwright-orchestrator --version
+          npm install @nsxbet/${{ matrix.package }}@0.0.0-test.${{ github.run_id }} --registry http://localhost:4873
+          npx ${{ matrix.bin }} --version

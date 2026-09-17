@@ -50,4 +50,21 @@ When `testDir` differs from `rootDir` (common in monorepos), the orchestrator co
 make act-e2e-monorepo
 ```
 
-This runs the full E2E workflow locally using Act, which simulates the GitHub Actions environment.
+This runs the full Playwright E2E workflow locally using Act, which simulates the GitHub Actions environment.
+
+## Jest fixture
+
+`apps/web/src/jest/e2e/` mirrors the Playwright fixture variety with Jest tests:
+parameterized and deeply nested cases, `::` names, Unicode and regex metacharacters,
+case variants, duplicate full names, skips/todos, a deliberate failure, and a deep path.
+It is configured independently in `apps/web/jest.config.js`.
+
+```bash
+cd examples/monorepo/apps/web
+npm install
+npm run test:jest # exits non-zero because failing.spec.ts is intentional
+```
+
+Run `make act-e2e-jest-monorepo` from the repository root for the tarball-based Jest
+orchestration workflow. It treats the fixture's intentional test failure as executed
+coverage, while a selection-verification failure still fails the workflow.

@@ -1,4 +1,4 @@
-import type { ShardAssignment, TestWithDuration } from './types.js';
+import type { ShardAssignment, TestWithDuration } from "./types.js";
 
 /**
  * Complete Karmarkar-Karp (CKK) inspired multi-way number partitioning.
@@ -35,7 +35,7 @@ export function assignWithCKK(
   numShards: number,
   timeoutMs: number = DEFAULT_CKK_TIMEOUT,
 ): CKKResult {
-  if (numShards < 1) throw new RangeError('numShards must be >= 1');
+  if (numShards < 1) throw new RangeError("numShards must be >= 1");
 
   const shards: ShardState[] = Array.from({ length: numShards }, (_, i) => ({
     shard: i + 1,
@@ -73,12 +73,7 @@ export function assignWithCKK(
     const byLoad = [...shards].sort((a, b) => b.load - a.load);
     const heavy = byLoad[0];
     const light = byLoad[byLoad.length - 1];
-    if (
-      !heavy ||
-      !light ||
-      heavy.load - light.load <= 0 ||
-      heavy.tests.length === 0
-    ) {
+    if (!heavy || !light || heavy.load - light.load <= 0 || heavy.tests.length === 0) {
       break;
     }
 
@@ -89,8 +84,8 @@ export function assignWithCKK(
     const gap = heavy.load - light.load;
     let bestGain = 0;
     let bestMove:
-      | { kind: 'move'; outIdx: number }
-      | { kind: 'swap'; outIdx: number; inIdx: number }
+      | { kind: "move"; outIdx: number }
+      | { kind: "swap"; outIdx: number; inIdx: number }
       | null = null;
     for (let outIdx = 0; outIdx < heavy.tests.length; outIdx++) {
       const out = heavy.tests[outIdx];
@@ -98,22 +93,21 @@ export function assignWithCKK(
       const moveGain = gap - Math.abs(gap - 2 * out.duration);
       if (moveGain > bestGain) {
         bestGain = moveGain;
-        bestMove = { kind: 'move', outIdx };
+        bestMove = { kind: "move", outIdx };
       }
       for (let inIdx = 0; inIdx < light.tests.length; inIdx++) {
         const into = light.tests[inIdx];
         if (!into) continue;
-        const swapGain =
-          gap - Math.abs(gap - 2 * (out.duration - into.duration));
+        const swapGain = gap - Math.abs(gap - 2 * (out.duration - into.duration));
         if (swapGain > bestGain) {
           bestGain = swapGain;
-          bestMove = { kind: 'swap', outIdx, inIdx };
+          bestMove = { kind: "swap", outIdx, inIdx };
         }
       }
     }
     if (bestMove) {
       improved = true;
-      if (bestMove.kind === 'move') {
+      if (bestMove.kind === "move") {
         const [out] = heavy.tests.splice(bestMove.outIdx, 1);
         if (out) {
           heavy.load -= out.duration;

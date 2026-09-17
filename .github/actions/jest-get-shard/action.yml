@@ -1,0 +1,37 @@
+name: Get Shard Assignment
+description: Validate the shard assignment artifact and pass it through for run-shard
+
+inputs:
+  assignment-file:
+    description: Path to the assignment JSON from orchestrate
+    required: true
+  shard-index:
+    description: 1-based shard index
+    required: true
+
+outputs:
+  assignment-file:
+    description: Same path (convenience pass-through)
+    value: ${{ steps.check.outputs.assignment-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate assignment file
+      id: check
+      shell: bash
+      run: |
+        FILE="${{ inputs.assignment-file }}"
+        if [ ! -f "$FILE" ]; then
+          echo "::error::assignment file not found: $FILE"
+          exit 1
+        fi
+        SHARDS=$(jq '.shards | length' "$FILE")
+        SHARD_INDEX=${{ inputs.shard-index }}
+        if [ "$SHARD_INDEX" -lt 1 ] || [ "$SHARD_INDEX" -gt "$SHARDS" ]; then
+          echo "::error::shard $SHARD_INDEX out of range 1..$SHARDS"
+          exit 1
+        fi
+        COUNT=$(jq -r '.shards[] | select(.shard == '"$SHARD_INDEX"') | .testIds | length' "$FILE")
+        echo "Shard $SHARD_INDEX has $COUNT tests"
+        echo "assignment-file=$FILE" >> $GITHUB_OUTPUT

@@ -1,0 +1,73 @@
+name: Merge Timing Data
+description: Merge per-shard timing artifacts into the store using EMA (storage-agnostic)
+
+inputs:
+  new-files:
+    description: Space-separated paths to new timing artifact files
+    required: true
+  output-file:
+    description: Path to write merged timing data
+    required: true
+  existing-file:
+    description: Path to existing timing store to merge with (optional)
+    required: false
+    default: ""
+  manifest:
+    description: Discovery manifest for pruning deleted tests (optional)
+    required: false
+    default: ""
+
+outputs:
+  test-count:
+    description: Number of entries in merged timing data
+    value: ${{ steps.merge.outputs.test-count }}
+
+runs:
+  using: composite
+  steps:
+    - name: Merge timing data
+      id: merge
+      shell: bash
+      run: |
+        NEW_FILES="${{ inputs.new-files }}"
+        VALID_FILES=""
+        for file in $NEW_FILES; do
+          for expanded in $file; do
+            if [ -f "$expanded" ]; then
+              VALID_FILES="$VALID_FILES $expanded"
+            fi
+          done
+        done
+
+        if [ -z "$VALID_FILES" ]; then
+          echo "::warning::No timing artifact files found"
+          echo "test-count=0" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        EXISTING_ARG=""
+        if [ -n "${{ inputs.existing-file }}" ] && [ -f "${{ inputs.existing-file }}" ]; then
+          EXISTING_ARG="--existing ${{ inputs.existing-file }}"
+          echo "Merging with existing data from ${{ inputs.existing-file }}"
+        fi
+
+        PRUNE_ARG=""
+        if [ -n "${{ inputs.manifest }}" ] && [ -f "${{ inputs.manifest }}" ]; then
+          PRUNE_ARG="--prune-manifest ${{ inputs.manifest }}"
+        fi
+
+        set +e
+        jest-orchestrator merge-timing \
+          --new $VALID_FILES \
+          --output "${{ inputs.output-file }}" \
+          $EXISTING_ARG $PRUNE_ARG
+        EXIT_CODE=$?
+        set -e
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "::error::Failed to merge timing data"
+          exit 1
+        fi
+
+        COUNT=$(jq '[.projects[].files[]] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+        echo "test-count=$COUNT" >> $GITHUB_OUTPUT
+        echo "Merged timing data has $COUNT entries"

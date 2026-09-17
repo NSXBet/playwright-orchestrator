@@ -69,7 +69,7 @@ export interface AssignResult {
   totalTests: number;
   estimatedSavings: number | null;
   /** Assignment granularity used */
-  level: 'test' | 'file';
+  level: "test" | "file";
 }
 
 /** Per-shard timing artifact produced after a run */
@@ -111,7 +111,7 @@ export interface JestJsonReport {
 }
 
 export const TIMING_DATA_VERSION = 1;
-export const DEFAULT_PROJECT_NAME = 'default-project';
+export const DEFAULT_PROJECT_NAME = "default-project";
 
 /**
  * Split user-provided jest args on whitespace. A single quoted value
@@ -140,9 +140,9 @@ export function identityFromKey(key: string): TestIdentity {
   if (
     !Array.isArray(arr) ||
     arr.length !== 3 ||
-    typeof arr[0] !== 'string' ||
-    typeof arr[1] !== 'string' ||
-    typeof arr[2] !== 'string'
+    typeof arr[0] !== "string" ||
+    typeof arr[1] !== "string" ||
+    typeof arr[2] !== "string"
   ) {
     throw new Error(`Invalid identity key: ${key.slice(0, 40)}...`);
   }
@@ -150,13 +150,13 @@ export function identityFromKey(key: string): TestIdentity {
 }
 
 function base64url(bytes: Uint8Array): string {
-  let bin = '';
+  let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
-  return Buffer.from(bin, 'binary').toString('base64url');
+  return Buffer.from(bin, "binary").toString("base64url");
 }
 
 function base64urlDecode(s: string): Uint8Array {
-  const bin = Buffer.from(s, 'base64url').toString('binary');
+  const bin = Buffer.from(s, "base64url").toString("binary");
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
@@ -167,4 +167,4 @@ function base64urlDecode(s: string): Uint8Array {
  * Discovery relies on circus marking pattern-missed tests as 'pending'
  * while still including them in the JSON report.
  */
-export const DISCOVERY_PATTERN = '(?!x)x';
+export const DISCOVERY_PATTERN = "(?!x)x";

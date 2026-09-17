@@ -1,10 +1,6 @@
-import { DEFAULT_EMA_ALPHA, DEFAULT_PRUNE_DAYS } from './constants.js';
-import type {
-  ShardTimingArtifact,
-  TestTimingData,
-  TimingData,
-} from './types.js';
-import { identityKey, TIMING_DATA_VERSION } from './types.js';
+import { DEFAULT_EMA_ALPHA, DEFAULT_PRUNE_DAYS } from "./constants.js";
+import type { ShardTimingArtifact, TestTimingData, TimingData } from "./types.js";
+import { identityKey, TIMING_DATA_VERSION } from "./types.js";
 
 /**
  * Merge per-shard timing artifacts into the store using EMA smoothing.

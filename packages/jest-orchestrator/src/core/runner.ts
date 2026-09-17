@@ -1,10 +1,10 @@
-import { spawn } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { verifyShardRun } from './assign.js';
-import type { JestJsonReport, ShardPlan } from './types.js';
-import { splitJestArgs } from './types.js';
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { verifyShardRun } from "./assign.js";
+import type { JestJsonReport, ShardPlan } from "./types.js";
+import { splitJestArgs } from "./types.js";
 
 /**
  * Shard execution via the exact-selection shim.
@@ -20,7 +20,7 @@ import { splitJestArgs } from './types.js';
 
 export interface RunShardOptions {
   root: string;
-  plan: Pick<ShardPlan, 'files' | 'selection' | 'shard'>;
+  plan: Pick<ShardPlan, "files" | "selection" | "shard">;
   jestArgs?: string[];
   jestBin?: string;
   timeoutMs?: number;
@@ -45,7 +45,7 @@ export class ShardRunError extends Error {
     readonly stderrTail: string,
   ) {
     super(message);
-    this.name = 'ShardRunError';
+    this.name = "ShardRunError";
   }
 }
 
@@ -54,11 +54,7 @@ export class ShardRunError extends Error {
  * plain .js file copied to dist by the build, living next to core/ in dist.
  */
 export function selectionShimPath(): string {
-  return path.join(
-    path.dirname(new URL(import.meta.url).pathname),
-    '..',
-    'selection-shim.js',
-  );
+  return path.join(path.dirname(new URL(import.meta.url).pathname), "..", "selection-shim.js");
 }
 
 /**
@@ -72,7 +68,7 @@ export async function runShard(opts: RunShardOptions): Promise<ShardRunResult> {
     files.map((f) => path.resolve(opts.root, f)),
     opts.batchSize ?? DEFAULT_BATCH_SIZE,
   );
-  const measurements: ShardRunResult['measurements'] = [];
+  const measurements: ShardRunResult["measurements"] = [];
   const problems: string[] = [];
   let mergedReport: JestJsonReport | undefined;
 
@@ -88,22 +84,20 @@ export async function runShard(opts: RunShardOptions): Promise<ShardRunResult> {
       fullName: s.fullName,
     })),
   };
-  const manifestDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'jest-orchestrator-'),
-  );
-  const manifestPath = path.join(manifestDir, 'selection.json');
+  const manifestDir = fs.mkdtempSync(path.join(os.tmpdir(), "jest-orchestrator-"));
+  const manifestPath = path.join(manifestDir, "selection.json");
   fs.writeFileSync(manifestPath, JSON.stringify(manifest));
   try {
     for (const batch of batches) {
       const args = [
         ...splitJestArgs(opts.jestArgs ?? []),
-        '--setupFilesAfterEnv',
+        "--setupFilesAfterEnv",
         shimPath,
-        '--runTestsByPath',
+        "--runTestsByPath",
         ...batch,
         // Assertion locations power `annotate` file/line annotations.
-        '--testLocationInResults',
-        '--json',
+        "--testLocationInResults",
+        "--json",
       ];
       const { code, stdout, stderr } = await spawnJestCapture(opts.root, args, {
         jestBin: opts.jestBin,
@@ -134,8 +128,7 @@ export async function runShard(opts: RunShardOptions): Promise<ShardRunResult> {
             numTotalTests: mergedReport.numTotalTests + report.numTotalTests,
             numPassedTests: mergedReport.numPassedTests + report.numPassedTests,
             numFailedTests: mergedReport.numFailedTests + report.numFailedTests,
-            numPendingTests:
-              mergedReport.numPendingTests + report.numPendingTests,
+            numPendingTests: mergedReport.numPendingTests + report.numPendingTests,
             numTodoTests: mergedReport.numTodoTests + report.numTodoTests,
             success: mergedReport.success && report.success,
             testResults: [...mergedReport.testResults, ...report.testResults],
@@ -145,7 +138,7 @@ export async function runShard(opts: RunShardOptions): Promise<ShardRunResult> {
       const executed: Array<{ file: string; fullName: string }> = [];
       for (const suite of report.testResults) {
         for (const a of suite.assertionResults) {
-          if (a.status === 'passed' || a.status === 'failed') {
+          if (a.status === "passed" || a.status === "failed") {
             measurements.push({
               file: suite.name,
               fullName: a.fullName,
@@ -158,13 +151,11 @@ export async function runShard(opts: RunShardOptions): Promise<ShardRunResult> {
       // Static skips/todos are in the selection (discovery sees them)
       // but never execute: circus reports them 'pending'/'todo'. They
       // are verified by presence in the report, not by measurement.
-      const expectedAll = manifest.selection.filter((s) =>
-        batch.includes(s.file),
-      );
+      const expectedAll = manifest.selection.filter((s) => batch.includes(s.file));
       const skipped = new Set(
         report.testResults.flatMap((s) =>
           s.assertionResults
-            .filter((a) => a.status === 'pending' || a.status === 'todo')
+            .filter((a) => a.status === "pending" || a.status === "todo")
             .map((a) => `${s.name}::${a.fullName}`),
         ),
       );
@@ -226,27 +217,25 @@ function spawnJestCapture(
       JEST_ORCHESTRATOR_SELECTION: opts.selectionManifestPath,
       JEST_ORCHESTRATOR_SHIM: opts.shimPath,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  let stdout = '';
-  let stderr = '';
+  let stdout = "";
+  let stderr = "";
   const timer = setTimeout(() => {
-    child.kill('SIGKILL');
-    reject(
-      new ShardRunError(`shard run timed out after ${opts.timeoutMs}ms`, ''),
-    );
+    child.kill("SIGKILL");
+    reject(new ShardRunError(`shard run timed out after ${opts.timeoutMs}ms`, ""));
   }, opts.timeoutMs);
-  child.stdout.on('data', (d: Buffer) => {
+  child.stdout.on("data", (d: Buffer) => {
     stdout += d.toString();
   });
-  child.stderr.on('data', (d: Buffer) => {
+  child.stderr.on("data", (d: Buffer) => {
     stderr += d.toString();
   });
-  child.on('error', (err) => {
+  child.on("error", (err) => {
     clearTimeout(timer);
     reject(err);
   });
-  child.on('close', (code) => {
+  child.on("close", (code) => {
     clearTimeout(timer);
     resolve({ code: code ?? -1, stdout, stderr });
   });
@@ -254,7 +243,7 @@ function spawnJestCapture(
 }
 
 function resolveJestBinFrom(cwd: string): string {
-  const local = path.join(cwd, 'node_modules', '.bin', 'jest');
+  const local = path.join(cwd, "node_modules", ".bin", "jest");
   if (fs.existsSync(local)) return local;
-  return 'jest';
+  return "jest";
 }

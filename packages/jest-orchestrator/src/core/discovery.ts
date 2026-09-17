@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process';
-import * as fs from 'node:fs';
-import { createRequire } from 'node:module';
-import * as path from 'node:path';
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import { createRequire } from "node:module";
+import * as path from "node:path";
 import {
   DEFAULT_PROJECT_NAME,
   identityKey,
@@ -10,7 +10,7 @@ import {
   type TestIdentity,
   TIMING_DATA_VERSION,
   type TimingData,
-} from './types.js';
+} from "./types.js";
 
 export interface DiscoveryOptions {
   /** Directory whose jest config should be used (spawn cwd) */
@@ -41,7 +41,7 @@ export class DiscoveryError extends Error {
     readonly stderrTail: string,
   ) {
     super(message);
-    this.name = 'DiscoveryError';
+    this.name = "DiscoveryError";
   }
 }
 
@@ -52,15 +52,8 @@ export class DiscoveryError extends Error {
  * jest-circus marks unmatched tests 'pending' but still reports every
  * registered test (skips, todos, dynamic) in the JSON output.
  */
-export async function discoverTests(
-  opts: DiscoveryOptions,
-): Promise<DiscoveryResult> {
-  const args = [
-    ...splitJestArgs(opts.jestArgs ?? []),
-    '--testNamePattern',
-    '(?!x)x',
-    '--json',
-  ];
+export async function discoverTests(opts: DiscoveryOptions): Promise<DiscoveryResult> {
+  const args = [...splitJestArgs(opts.jestArgs ?? []), "--testNamePattern", "(?!x)x", "--json"];
   const { code, stdout, stderr } = await spawnJestCapture(
     opts.root,
     args,
@@ -97,7 +90,7 @@ export function parseDiscoveryReport(
       const project = DEFAULT_PROJECT_NAME;
       tests.push({
         project,
-        file: suite.name.replaceAll('\\', '/'),
+        file: suite.name.replaceAll("\\", "/"),
         fullName: assertion.fullName,
       });
     }
@@ -123,27 +116,25 @@ function spawnJestCapture(
   const bin = jestBin ?? resolveJestBin(cwd);
   const child = spawn(bin, args, {
     cwd,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  let stdout = '';
-  let stderr = '';
+  let stdout = "";
+  let stderr = "";
   const timer = setTimeout(() => {
-    child.kill('SIGKILL');
-    reject(
-      new DiscoveryError(`discovery run timed out after ${timeoutMs}ms`, ''),
-    );
+    child.kill("SIGKILL");
+    reject(new DiscoveryError(`discovery run timed out after ${timeoutMs}ms`, ""));
   }, timeoutMs);
-  child.stdout.on('data', (d: Buffer) => {
+  child.stdout.on("data", (d: Buffer) => {
     stdout += d.toString();
   });
-  child.stderr.on('data', (d: Buffer) => {
+  child.stderr.on("data", (d: Buffer) => {
     stderr += d.toString();
   });
-  child.on('error', (err) => {
+  child.on("error", (err) => {
     clearTimeout(timer);
     reject(err);
   });
-  child.on('close', (code) => {
+  child.on("close", (code) => {
     clearTimeout(timer);
     resolve({ code: code ?? -1, stdout, stderr });
   });
@@ -158,24 +149,24 @@ function spawnJestCapture(
  * `cwd` — a relative bin path would be misinterpreted.
  */
 export function resolveJestBin(cwd: string): string {
-  const local = path.resolve(cwd, 'node_modules', '.bin', 'jest');
+  const local = path.resolve(cwd, "node_modules", ".bin", "jest");
   if (fs.existsSync(local)) return local;
   // Our own dev dependency (jest-cli ships the same CLI).
   try {
     const req = createRequire(import.meta.url);
-    const pkgPath = req.resolve('jest-cli/package.json', {
+    const pkgPath = req.resolve("jest-cli/package.json", {
       paths: [path.resolve(cwd), import.meta.url],
     });
-    return path.join(path.dirname(pkgPath), 'bin', 'jest.js');
+    return path.join(path.dirname(pkgPath), "bin", "jest.js");
   } catch {
-    return 'jest';
+    return "jest";
   }
 }
 
 /** Load timing data from disk (empty store when missing/corrupt). */
 export function loadTimingDataFile(file: string): TimingData {
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as TimingData;
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as TimingData;
     return parsed.version === TIMING_DATA_VERSION ? parsed : emptyTimingData();
   } catch {
     return emptyTimingData();
@@ -196,12 +187,8 @@ export function emptyTimingData(): TimingData {
 }
 
 /** Historical duration for a test; undefined when unknown (new test). */
-export function getHistoricalDuration(
-  timings: TimingData,
-  id: TestIdentity,
-): number | undefined {
-  const duration =
-    timings.projects[id.project]?.files[identityKey(id)]?.duration;
+export function getHistoricalDuration(timings: TimingData, id: TestIdentity): number | undefined {
+  const duration = timings.projects[id.project]?.files[identityKey(id)]?.duration;
   // A corrupt store entry (NaN/Infinity/negative) must not poison the
   // plan; fall through to the estimate chain instead.
   return duration !== undefined && Number.isFinite(duration) && duration >= 0
