@@ -91,7 +91,7 @@ jobs:
           DISCOVERED=$(jq '.tests | length' "$MANIFEST")
           ASSIGNED=$(jq '[.shards[].testIds[]] | length' "$ASSIGNMENT")
           PLANNED_DURATION=$(jq '[.shards[].expectedDuration] | add' "$ASSIGNMENT")
-          EXPECTED_DURATION=$((DISCOVERED * 30000))
+          EXPECTED_DURATION=$((DISCOVERED * 10000))
 
           [ "$DISCOVERED" -eq "$ASSIGNED" ] || {
             echo "::error::cold-start plan assigned $ASSIGNED of $DISCOVERED discovered tests"
@@ -177,7 +177,7 @@ jobs:
         run: |
           REPORT="report-shard-${{ matrix.shard }}.json"
           if [ -f "$REPORT" ]; then
-            ANNOTATION=$(jest-orchestrator annotate --report "$REPORT" --shard ${{ matrix.shard }} --summary-append "$GITHUB_STEP_SUMMARY")
+            ANNOTATION=$(jest-orchestrator annotate --report "$REPORT" --assignment "${{ github.workspace }}/.orchestration/assignment.json" --shard ${{ matrix.shard }} --summary-append "$GITHUB_STEP_SUMMARY")
             echo "$ANNOTATION"
             ! grep -Fq "not selected" <<< "$ANNOTATION" || {
               echo "::error::assigned Jest tests must not be reported as outside this shard"
@@ -325,4 +325,140 @@ jobs:
             --level "${{ github.event.inputs.level || 'file' }}" \
             --output roundtrip-assignment.json
           TOTAL=$(jq '.totalTests' roundtrip-assignment.json)
-          echo "✓ Timing round trip validated: $ENTRIES timing entries for $TOTAL discovered tests"
+          WARM_DURATION=$(jq '[.shards[].expectedDuration] | add' roundtrip-assignment.json)
+          [ "$TOTAL" -eq 50 ] || { echo "::error::warm-start plan has $TOTAL tests; expected 50"; exit 1; }
+          [ "$WARM_DURATION" -gt 0 ] || { echo "::error::warm-start plan has zero expected duration"; exit 1; }
+          echo "✓ Timing round trip validated: $ENTRIES timing entries for $TOTAL discovered tests, $WARM_DURATION ms estimated"
+
+      - name: Stage warm-start inputs
+        run: |
+          mkdir warm-start-inputs
+          cp .orchestration/manifest.json warm-start-inputs/manifest.json
+          cp roundtrip-assignment.json warm-start-inputs/assignment.json
+          cp jest-monorepo-timing.json warm-start-inputs/timing.json
+
+      - name: Upload warm-start inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-warm-start-inputs
+          path: warm-start-inputs/
+          retention-days: 1
+
+  warm-test:
+    name: Jest warm-start shard ${{ matrix.shard }}
+    needs: [setup, orchestrate, merge]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.orchestrate.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-package-tarball
+          path: packages/jest-orchestrator
+
+      - name: Install CLI from tarball
+        run: |
+          npm config set prefix "$HOME/.npm-global"
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+          npm install -g ./packages/jest-orchestrator/nsxbet-jest-orchestrator-*.tgz
+
+      - name: Install monorepo dependencies
+        working-directory: examples/monorepo/apps/web
+        run: npm install
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-warm-start-inputs
+          path: warm-start-inputs
+
+      - name: Run warm-start Jest shard
+        working-directory: examples/monorepo/apps/web
+        run: |
+          set +e
+          jest-orchestrator run-shard \
+            --root . \
+            --assignment "${{ github.workspace }}/warm-start-inputs/assignment.json" \
+            --shard ${{ matrix.shard }} \
+            --output warm-timing-${{ matrix.shard }}.json \
+            --report-output warm-report-${{ matrix.shard }}.json
+          EXIT_CODE=$?
+          set -e
+          if [ "$EXIT_CODE" -gt 1 ]; then
+            echo "::error::warm-start shard ${{ matrix.shard }} verification failed (exit $EXIT_CODE)"
+            exit "$EXIT_CODE"
+          fi
+
+      - name: Upload warm-start timing artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-warm-timing-shard-${{ matrix.shard }}
+          path: examples/monorepo/apps/web/warm-timing-${{ matrix.shard }}.json
+          if-no-files-found: error
+
+  verify-warm-start:
+    name: Verify Jest warm start
+    needs: [orchestrate, merge, warm-test]
+    if: success() || failure()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-package-tarball
+          path: packages/jest-orchestrator
+
+      - name: Install CLI from tarball
+        run: |
+          npm config set prefix "$HOME/.npm-global"
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+          npm install -g ./packages/jest-orchestrator/nsxbet-jest-orchestrator-*.tgz
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-warm-start-inputs
+          path: warm-start-inputs
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jest-warm-timing-shard-*
+          merge-multiple: true
+          path: warm-timing-artifacts
+
+      - name: Validate warm-start execution and collect metrics
+        run: |
+          set -euo pipefail
+          ASSIGNMENT=warm-start-inputs/assignment.json
+          EXPECTED=$(jq '[.shards[].testIds[]] | length' "$ASSIGNMENT")
+          OBSERVED=$(jq '[.measurements[]] | length' warm-timing-artifacts/warm-timing-*.json | awk '{ total += $1 } END { print total }')
+          PLANNED_DURATION=$(jq '[.shards[].expectedDuration] | add' "$ASSIGNMENT")
+          MEASURED_DURATION=$(jq '[.measurements[].duration] | add' warm-timing-artifacts/warm-timing-*.json | awk '{ total += $1 } END { print total }')
+
+          [ "$EXPECTED" -eq 50 ] || { echo "::error::warm-start plan assigned $EXPECTED tests; expected 50"; exit 1; }
+          [ "$OBSERVED" -eq 48 ] || { echo "::error::warm-start execution measured $OBSERVED tests; expected 48 executable tests"; exit 1; }
+          [ "$PLANNED_DURATION" -gt 0 ] || { echo "::error::warm-start plan has zero expected duration"; exit 1; }
+          [ "$MEASURED_DURATION" -gt 0 ] || { echo "::error::warm-start execution collected zero duration"; exit 1; }
+          echo "✓ Warm-start execution: $EXPECTED assigned tests, $OBSERVED measurements, $PLANNED_DURATION ms planned, $MEASURED_DURATION ms measured"
+
+      - name: Merge second-run timings
+        uses: ./.github/actions/jest-merge-timing
+        with:
+          existing-file: warm-start-inputs/timing.json
+          new-files: warm-timing-artifacts/warm-timing-*.json
+          output-file: warm-jest-monorepo-timing.json
+          manifest: warm-start-inputs/manifest.json
+
+      - name: Validate timing learning
+        run: |
+          set -euo pipefail
+          FIRST=$(jq '[.projects[].files[]] | length' warm-start-inputs/timing.json)
+          SECOND=$(jq '[.projects[].files[]] | length' warm-jest-monorepo-timing.json)
+          REPEATED=$(jq '[.projects[].files[] | select(.runs >= 2)] | length' warm-jest-monorepo-timing.json)
+          [ "$FIRST" -eq 47 ] || { echo "::error::first run produced $FIRST timing entries; expected 47"; exit 1; }
+          [ "$SECOND" -eq "$FIRST" ] || { echo "::error::second run changed timing entry count from $FIRST to $SECOND"; exit 1; }
+          [ "$REPEATED" -eq "$FIRST" ] || { echo "::error::second run updated $REPEATED of $FIRST timing entries"; exit 1; }
+          echo "✓ Timing learning: $SECOND entries updated by a real second shard execution"

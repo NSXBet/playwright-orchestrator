@@ -193,8 +193,10 @@ Installs and caches the `jest-orchestrator` CLI from npm.
 ### `jest-orchestrate`
 
 Discovers every registered Jest test then assigns it to a shard plan. A missing
-or corrupt timing file is a cold start, not an error: assignments use duration
-estimates and the first shard run creates history.
+or corrupt timing file is a cold start, not an error: assignments use a
+10-second fallback estimate and the first shard run creates history. Once timing
+exists, new tests use the same-file average, then the global average, before
+falling back to 10 seconds.
 
 ```yaml
 - uses: NSXBet/test-orchestrator/.github/actions/jest-orchestrate@main
@@ -236,6 +238,20 @@ the per-shard timing artifact.
   failure and must fail the job.
 - Static `test.skip` and `test.todo` entries remain in the plan but do not add a
   timing measurement because Jest does not execute them.
+
+### `annotate`
+
+Pass the assignment file and shard number with the report to distinguish
+selected `test.skip`/`test.todo` entries from assertions filtered into another
+shard:
+
+```bash
+jest-orchestrator annotate \
+  --report shard-report-1.json \
+  --assignment .orchestration/assignment.json \
+  --shard 1 \
+  --summary-append "$GITHUB_STEP_SUMMARY"
+```
 
 ### `jest-merge-timing`
 
