@@ -7,6 +7,15 @@ import { DEFAULT_PROJECT_NAME, identityFromKey, identityKey } from "./types.js";
 /** Default duration for tests with no history (30s). */
 export const DEFAULT_TEST_DURATION = 30000;
 
+/**
+ * Create scheduling inputs for discovery results that have no measured duration.
+ * Kept separate from `assignShards`: callers with measured inputs may legitimately
+ * use a zero duration, while a CLI cold start must receive an estimate.
+ */
+export function createColdStartTests<T extends TestWithDuration>(tests: T[]): T[] {
+  return tests.map((test) => ({ ...test, duration: DEFAULT_TEST_DURATION }));
+}
+
 export interface AssignOptions {
   tests: TestWithDuration[];
   timings: TimingData | null;

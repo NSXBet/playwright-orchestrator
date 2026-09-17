@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { assignShards, verifyShardRun } from "../src/core/assign.js";
+import {
+  assignShards,
+  createColdStartTests,
+  DEFAULT_TEST_DURATION,
+  verifyShardRun,
+} from "../src/core/assign.js";
 import { assignWithCKK } from "../src/core/ckk-algorithm.js";
 import { assignWithLPT } from "../src/core/lpt-algorithm.js";
 import { mergeTimingData, pruneTimingData } from "../src/core/timing-store.js";
@@ -180,6 +185,21 @@ describe("assignShards", () => {
     const result = assignShards({ tests, timings: null, shards: 2 });
     const total = result.shards.reduce((s, x) => s + x.expectedDuration, 0);
     expect(total).toBe(9000);
+  });
+
+  test("cold-start inputs use the default estimate without changing source data", () => {
+    const coldStart = createColdStartTests(tests);
+    expect(coldStart.map((test) => test.duration)).toEqual([
+      DEFAULT_TEST_DURATION,
+      DEFAULT_TEST_DURATION,
+      DEFAULT_TEST_DURATION,
+    ]);
+    expect(tests.map((test) => test.duration)).toEqual([1000, 5000, 3000]);
+
+    const result = assignShards({ tests: coldStart, timings: null, shards: 2 });
+    const total = result.shards.reduce((sum, shard) => sum + shard.expectedDuration, 0);
+    expect(total).toBe(tests.length * DEFAULT_TEST_DURATION);
+    expect(result.shards.every((shard) => shard.expectedDuration > 0)).toBe(true);
   });
 
   test("duplicate fullNames in same file collapse into one unit but restore count", () => {

@@ -83,6 +83,30 @@ jobs:
           shards: ${{ github.event.inputs.shards || '2' }}
           level: ${{ github.event.inputs.level || 'file' }}
 
+      - name: Validate cold-start assignment
+        run: |
+          set -euo pipefail
+          ASSIGNMENT=.orchestration/assignment.json
+          MANIFEST=.orchestration/manifest.json
+          DISCOVERED=$(jq '.tests | length' "$MANIFEST")
+          ASSIGNED=$(jq '[.shards[].testIds[]] | length' "$ASSIGNMENT")
+          PLANNED_DURATION=$(jq '[.shards[].expectedDuration] | add' "$ASSIGNMENT")
+          EXPECTED_DURATION=$((DISCOVERED * 30000))
+
+          [ "$DISCOVERED" -eq "$ASSIGNED" ] || {
+            echo "::error::cold-start plan assigned $ASSIGNED of $DISCOVERED discovered tests"
+            exit 1
+          }
+          [ "$PLANNED_DURATION" -eq "$EXPECTED_DURATION" ] || {
+            echo "::error::cold-start plan is $PLANNED_DURATION ms; expected $EXPECTED_DURATION ms"
+            exit 1
+          }
+          jq -e '.shards | all(.expectedDuration > 0)' "$ASSIGNMENT" > /dev/null || {
+            echo "::error::a cold-start shard has a zero expected duration"
+            exit 1
+          }
+          echo "✓ Cold-start plan: $ASSIGNED/$DISCOVERED tests, $PLANNED_DURATION ms estimated"
+
       - name: Upload assignment artifact
         uses: actions/upload-artifact@v4
         with:
@@ -153,7 +177,12 @@ jobs:
         run: |
           REPORT="report-shard-${{ matrix.shard }}.json"
           if [ -f "$REPORT" ]; then
-            jest-orchestrator annotate --report "$REPORT" --shard ${{ matrix.shard }} --summary-append "$GITHUB_STEP_SUMMARY"
+            ANNOTATION=$(jest-orchestrator annotate --report "$REPORT" --shard ${{ matrix.shard }} --summary-append "$GITHUB_STEP_SUMMARY")
+            echo "$ANNOTATION"
+            ! grep -Fq "not selected" <<< "$ANNOTATION" || {
+              echo "::error::assigned Jest tests must not be reported as outside this shard"
+              exit 1
+            }
           fi
 
       - name: Upload timing artifact

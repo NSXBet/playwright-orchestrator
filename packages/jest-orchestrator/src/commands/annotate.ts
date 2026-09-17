@@ -77,17 +77,9 @@ export default class Annotate extends Command {
     let passed = 0;
     let failed = 0;
     let skipped = 0;
-    let notSelected = 0;
 
     for (const suite of report.testResults) {
       const absFile = suite.name;
-      // Suite-level 'skipped' means NOTHING ran in this file: either the
-      // whole file is outside the pattern-missed selection or the entire
-      // suite is author-skipped. Those pendings are 'not selected', not
-      // author skips. Inside a 'focused' suite, a pending is a
-      // pattern-missed test; author test.skip is indistinguishable from
-      // pattern-missed per row, so both are 'not executed here'.
-      const suiteRan = suite.status !== "skipped";
       for (const a of suite.assertionResults) {
         if (a.status === "passed") {
           passed++;
@@ -99,11 +91,11 @@ export default class Annotate extends Command {
           continue;
         }
         if (a.status === "pending") {
-          if (suiteRan && suite.status === "focused") {
-            notSelected++;
-          } else {
-            skipped++;
-          }
+          // Jest's JSON report does not distinguish an author-declared
+          // test.skip from a test filtered by a focused suite. Both are
+          // pending, so report the observable outcome without implying
+          // that an assigned test belongs to another shard.
+          skipped++;
           continue;
         }
         failed++;
@@ -130,14 +122,12 @@ export default class Annotate extends Command {
         `|--------|------|---------|`,
         ...rows,
         "",
-        `**${passed} passed**, ${failed} failed, ${skipped} skipped/todo, ${notSelected} not selected in this shard, ${total} total`,
+        `**${passed} passed**, ${failed} failed, ${skipped} skipped/todo, ${total} total`,
         "",
       ].join("\n");
       fs.appendFileSync(flags["summary-append"], summary);
     }
 
-    this.log(
-      `Annotated: ${passed} passed, ${failed} failed, ${skipped} skipped/todo, ${notSelected} not selected`,
-    );
+    this.log(`Annotated: ${passed} passed, ${failed} failed, ${skipped} skipped/todo`);
   }
 }
