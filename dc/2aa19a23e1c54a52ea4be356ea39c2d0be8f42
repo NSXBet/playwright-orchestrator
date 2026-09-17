@@ -1,0 +1,53 @@
+.agents/skills/openspec-new-change/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-86
+.agents/skills/openspec-ff-change/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-120
+.agents/skills/openspec-apply-change/SKILL.md
+  s_5809024f6f3f29::t_97cf3583e6c34e 1-2,5,7,9,11-12,14,16,18,20
+  s_5809024f6f3f29::t_b2d70f393591a9 3-4,6,8,10,13,15,17,19,21-188
+.agents/skills/openspec-archive-change/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 3-4,6,8,10,13,15,17,19,21-186
+  s_5809024f6f3f29::t_97cf3583e6c34e 1-2,5,7,9,11-12,14,16,18,20
+AGENTS.md
+  s_5809024f6f3f29::t_48d27193ba62c7 20-25
+CLAUDE.md
+  s_5809024f6f3f29::t_0da5184fe1373f 7,9-11,13
+.agents/skills/openspec-explore/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-320
+.agents/skills/migration-generate/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-99
+.agents/skills/openspec-onboard/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-581
+.agents/skills/openspec-propose/SKILL.md
+  s_5809024f6f3f29::t_97cf3583e6c34e 1-2,5,7,9,11-12
+  s_5809024f6f3f29::t_b2d70f393591a9 3-4,6,8,10,13-158
+.agents/skills/grill-me/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-31
+.agents/skills/openspec-verify-change/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-179
+.agents/skills/openspec-sync-specs/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-275
+.agents/skills/.openspec-target
+  s_5809024f6f3f29::t_b2d70f393591a9 1
+.agents/skills/openspec-bulk-archive-change/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-122,129-353
+  s_5809024f6f3f29::t_57d6beb58aa66b 123-128
+.agents/skills/openspec-continue-change/SKILL.md
+  s_5809024f6f3f29::t_b2d70f393591a9 1-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dc2aa19a23e1c54a52ea4be356ea39c2d0be8f42",
+  "prompts": {},
+  "sessions": {
+    "s_5809024f6f3f29": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0acb2-9c09-75a1-a7a9-28eb8ed0294e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
