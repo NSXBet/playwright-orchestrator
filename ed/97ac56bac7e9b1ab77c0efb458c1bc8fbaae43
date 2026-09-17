@@ -1,0 +1,29 @@
+openspec/changes/add-jest-orchestrator/specs/jest-orchestration/spec.md
+  s_5809024f6f3f29::t_9cb2519fc3b3b5 1-55
+openspec/changes/add-jest-orchestrator/tasks.md
+  s_5809024f6f3f29::t_04cf84a2d85e6e 1-23
+openspec/changes/add-jest-orchestrator/design.md
+  s_5809024f6f3f29::t_9cf41366dc8bd7 1-53
+openspec/changes/add-jest-orchestrator/proposal.md
+  s_5809024f6f3f29::t_0a6b98fea58199 1-17
+openspec/changes/add-jest-orchestrator/specs/repository-workspace/spec.md
+  s_5809024f6f3f29::t_19ff898863afdd 1-17
+openspec/changes/add-jest-orchestrator/.openspec.yaml
+  s_5809024f6f3f29::t_28322409e56e60 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ed97ac56bac7e9b1ab77c0efb458c1bc8fbaae43",
+  "prompts": {},
+  "sessions": {
+    "s_5809024f6f3f29": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0acb2-9c09-75a1-a7a9-28eb8ed0294e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
