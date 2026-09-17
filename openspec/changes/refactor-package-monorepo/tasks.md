@@ -20,4 +20,4 @@
 
 - [x] 4.1 Run formatting, linting, type checking, unit tests, and build from the repository root.
 - [x] 4.2 Verify package contents with `npm pack --dry-run` and clean-install/execute the tarball.
-- [ ] 4.3 Run applicable Act and Verdaccio publication checks.
+- [x] 4.3 Run applicable Act and Verdaccio publication checks.
