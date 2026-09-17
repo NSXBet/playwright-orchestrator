@@ -1,0 +1,42 @@
+openspec/project.md
+  s_5809024f6f3f29::t_9048daecd7e530 25-26,34
+  s_5809024f6f3f29::t_2f00b187bf32fc 12
+.github/workflows/e2e-monorepo.yml
+  s_5809024f6f3f29::t_3c8db874507e75 18,47,100,158,170,173,177,181,189,194,221,226,230,233,239,242,248,287,385
+  s_5809024f6f3f29::t_8d2b31497d16f6 445,451,455,459,463,466,476,479,485
+openspec/changes/refactor-package-monorepo/tasks.md
+  s_5809024f6f3f29::t_38fb7dc84407f5 15-17,21-22
+packages/playwright-orchestrator/README.md
+  s_5809024f6f3f29::t_a5dcf9e28d8aa5 187,243
+  s_5809024f6f3f29::t_793cee83d6334a 101
+packages/playwright-orchestrator/__tests__/extract-timing.test.ts
+  s_5809024f6f3f29::t_f068fd3455b8cd 32-33,36
+examples/basic/README.md
+  s_5809024f6f3f29::t_3c8db874507e75 46-50,52,54-57
+  s_5809024f6f3f29::t_8cf04247124819 9-14,65
+.github/workflows/ci.yml
+  s_5809024f6f3f29::t_777d79f54e367f 87
+  s_5809024f6f3f29::t_e139bb555f177d 20-22
+AGENTS.md
+  s_5809024f6f3f29::t_614f00d55c95f2 14-15,26,29
+  s_5809024f6f3f29::t_e80dbc49c32a64 33,36,148,236
+  s_5809024f6f3f29::t_1535fcc7a7e57b 10,52,66,73,78-79,87,95,142,164,176,181,214,219,230,233,237-238,312,321,331,364,381-382,400-406,417,453,459-463,467-470,472-474
+packages/playwright-orchestrator/src/core/ckk-algorithm.ts
+  s_5809024f6f3f29::t_a5dcf9e28d8aa5 90-91,272-273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "876687652290960eacadb606428f341918fb4964",
+  "prompts": {},
+  "sessions": {
+    "s_5809024f6f3f29": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0acb2-9c09-75a1-a7a9-28eb8ed0294e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
