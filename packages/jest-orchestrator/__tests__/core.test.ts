@@ -8,6 +8,7 @@ import {
 import { selectedTestsForShard, summarizeJestReport } from "../src/commands/annotate.js";
 import { assignWithCKK } from "../src/core/ckk-algorithm.js";
 import { assignWithLPT } from "../src/core/lpt-algorithm.js";
+import { runShard } from "../src/core/runner.js";
 import { mergeTimingData, pruneTimingData } from "../src/core/timing-store.js";
 import type {
   AssignResult,
@@ -97,6 +98,23 @@ describe("file-level assignment", () => {
       level: "test",
     });
     expect(result.level).toBe("test");
+  });
+});
+
+describe("empty shard plans", () => {
+  test("are successful no-ops without spawning Jest", async () => {
+    const result = await runShard({
+      root: "/not-a-jest-project",
+      plan: { shard: 5, files: [], selection: [] },
+      jestBin: "/must-not-be-spawned",
+    });
+    expect(result).toEqual({
+      shard: 5,
+      ok: true,
+      problems: [],
+      measurements: [],
+      report: undefined,
+    });
   });
 });
 
