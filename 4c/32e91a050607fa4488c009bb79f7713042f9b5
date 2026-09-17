@@ -1,0 +1,23 @@
+.github/workflows/e2e-monorepo.yml
+  s_a366f4bba4f921::t_214b365ebec643 134
+.github/actions/get-shard/action.yml
+  s_a366f4bba4f921::t_b4ae105d3b4385 56-59,63-71
+docs/external-integration.md
+  s_a366f4bba4f921::t_8f5e70180788c0 483-488
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4c32e91a050607fa4488c009bb79f7713042f9b5",
+  "prompts": {},
+  "sessions": {
+    "s_a366f4bba4f921": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ad84-c2c2-7250-9966-d3f075c70c8d",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
