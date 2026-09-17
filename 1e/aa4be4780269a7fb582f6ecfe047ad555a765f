@@ -1,0 +1,29 @@
+openspec/changes/update-pr-affected-validation/specs/repository-workspace/spec.md
+  s_5809024f6f3f29::t_3cd0f49c4c42c6 1-37
+openspec/changes/update-pr-affected-validation/design.md
+  s_5809024f6f3f29::t_3ef7afc74de70b 1-65
+openspec/config.yaml
+  s_5809024f6f3f29::t_948ea1210e3757 1
+openspec/changes/update-pr-affected-validation/tasks.md
+  s_5809024f6f3f29::t_c4cdca88110949 1-22
+openspec/changes/update-pr-affected-validation/.openspec.yaml
+  s_5809024f6f3f29::t_948ea1210e3757 1-2
+openspec/changes/update-pr-affected-validation/proposal.md
+  s_5809024f6f3f29::t_113ba4f0d399f7 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1eaa4be4780269a7fb582f6ecfe047ad555a765f",
+  "prompts": {},
+  "sessions": {
+    "s_5809024f6f3f29": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0acb2-9c09-75a1-a7a9-28eb8ed0294e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
