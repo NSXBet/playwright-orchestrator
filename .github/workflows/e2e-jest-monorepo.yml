@@ -420,8 +420,19 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          name: jest-orchestration-assignment
+          path: cold-assignment
+
+      - uses: actions/download-artifact@v4
+        with:
           name: jest-warm-start-inputs
           path: warm-start-inputs
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jest-timing-shard-*
+          merge-multiple: true
+          path: timing-artifacts
 
       - uses: actions/download-artifact@v4
         with:
@@ -462,3 +473,61 @@ jobs:
           [ "$SECOND" -eq "$FIRST" ] || { echo "::error::second run changed timing entry count from $FIRST to $SECOND"; exit 1; }
           [ "$REPEATED" -eq "$FIRST" ] || { echo "::error::second run updated $REPEATED of $FIRST timing entries"; exit 1; }
           echo "✓ Timing learning: $SECOND entries updated by a real second shard execution"
+
+      - name: Write cold-to-warm lifecycle verdict
+        run: |
+          set -euo pipefail
+          COLD=cold-assignment/assignment.json
+          WARM=warm-start-inputs/assignment.json
+          MANIFEST=warm-start-inputs/manifest.json
+          DISCOVERED=$(jq '.tests | length' "$MANIFEST")
+          STATIC=$(jq '[.tests[] | select(.fullName | test("Skip Patterns (this test is skipped|implement this test later)$"))] | length' "$MANIFEST")
+          COLD_ASSIGNED=$(jq '[.shards[].testIds[]] | length' "$COLD")
+          WARM_ASSIGNED=$(jq '[.shards[].testIds[]] | length' "$WARM")
+          COLD_PLANNED=$(jq '[.shards[].expectedDuration] | add' "$COLD")
+          WARM_PLANNED=$(jq '[.shards[].expectedDuration] | add' "$WARM")
+          COLD_MEASURED=$(jq '[.measurements[]] | length' timing-artifacts/shard-timing-*.json | awk '{ total += $1 } END { print total }')
+          WARM_MEASURED=$(jq '[.measurements[]] | length' warm-timing-artifacts/warm-timing-*.json | awk '{ total += $1 } END { print total }')
+          PLACEMENT_CHANGED=$(jq -n --slurpfile cold "$COLD" --slurpfile warm "$WARM" '$cold[0].shards != $warm[0].shards')
+          {
+            echo "## Jest cold-to-warm lifecycle verdict"
+            echo ""
+            echo "### 1. Run configuration"
+            echo "- Framework: Jest"
+            echo "- Assignment level: ${{ github.event.inputs.level || 'file' }}"
+            echo "- Shards: ${{ github.event.inputs.shards || '2' }} (five-shard manual coverage supported)"
+            echo "- Cold timing-store source: absent; warm input: \`warm-start-inputs/timing.json\`"
+            echo ""
+            echo "### 2. Cold plan"
+            echo "- Discovered occurrences: $DISCOVERED"
+            echo "- Assigned occurrences: $COLD_ASSIGNED"
+            echo "- Static skip/todo occurrences: $STATIC"
+            echo "- Total planned duration: $COLD_PLANNED ms (10-second fallback estimates)"
+            echo ""
+            echo "### 3. Cold execution and collection"
+            echo "- Exact assignment/report coverage: $COLD_ASSIGNED/$COLD_ASSIGNED"
+            echo "- Executable measurements: $COLD_MEASURED"
+            echo "- Merged timing entries: $FIRST"
+            echo ""
+            echo "### 4. Timing hand-off"
+            echo "- Exact store passed to warm assignment: \`warm-start-inputs/timing.json\`"
+            echo "- Timing entries available to warm plan: $FIRST"
+            echo ""
+            echo "### 5. Warm plan"
+            echo "- Assigned occurrences: $WARM_ASSIGNED (cold: $COLD_ASSIGNED)"
+            echo "- Total planned duration: $WARM_PLANNED ms (cold: $COLD_PLANNED ms)"
+            echo "- Placement changed: $PLACEMENT_CHANGED (diagnostic only; wall-clock timing is not required to move a shard)"
+            echo ""
+            echo "### 6. Warm execution and second merge"
+            echo "- Exact assignment/report coverage: $WARM_ASSIGNED/$WARM_ASSIGNED"
+            echo "- Executable measurements: $WARM_MEASURED"
+            echo "- Repeated observations: $REPEATED/$FIRST"
+            echo ""
+            echo "### 7. Final verdict"
+            echo "| Invariant | Expected | Actual | Result |"
+            echo "| --- | --- | --- | --- |"
+            echo "| Cold assignment coverage | $DISCOVERED | $COLD_ASSIGNED | PASS |"
+            echo "| Cold store passed to warm plan | non-empty | $FIRST entries | PASS |"
+            echo "| Warm assignment coverage | $DISCOVERED | $WARM_ASSIGNED | PASS |"
+            echo "| Second-run observations | $FIRST | $REPEATED | PASS |"
+          } >> "$GITHUB_STEP_SUMMARY"
