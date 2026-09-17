@@ -44,22 +44,15 @@ Formatting remains a root-level check because it applies to all tracked reposito
 
 **Alternative considered:** Skip publication validation for PRs without an affected package. Rejected until the workflow has explicit job-level gating and coverage for that behavior.
 
-### Test command selection at workflow level
-
-Add a static test that asserts the CI workflow uses the exact Turbo affected filter only in the pull-request branch and preserves unfiltered commands for `main`.
-
-**Rationale:** The behavior is shell/workflow configuration, so a focused static test protects the fail-closed range contract without requiring GitHub Actions execution.
-
 ## Risks / Trade-offs
 
 - **Base branch fetch fails or is renamed** → Explicit fetch under strict shell options fails the job; the workflow uses GitHub's supplied `base_ref` only for pull requests.
 - **Repository-level changes do not select a package** → Formatting still covers repository files and `main` remains fully validated; later changes can add explicit root-task rules if needed.
 - **The current repository has one workspace** → The filter has little immediate time benefit but establishes correct behavior before more packages are added.
-- **Workflow tests can drift from runtime behavior** → Assert the command strings and retain Act validation of the workflow.
+- **Workflow conditions can drift from task behavior** → Validate the workflow syntax and run representative filtered and unfiltered Turbo probes before merging.
 
 ## Migration Plan
 
-1. Add the affected-workspace helper command and update CI jobs to choose filtered or complete commands by event.
-2. Add focused workflow tests and contributor documentation.
-3. Validate filtered and unfiltered commands locally using `origin/main...HEAD`, then run the standard CI and Act checks.
-4. Roll back by reverting the workflow/helper commit; no package migration is involved.
+1. Add fail-closed affected-workspace commands to CI jobs and choose filtered or complete commands by event.
+2. Validate filtered and unfiltered commands locally using `origin/main...HEAD`, then run workflow syntax validation.
+3. Roll back by reverting the workflow-only commit; no package migration is involved.

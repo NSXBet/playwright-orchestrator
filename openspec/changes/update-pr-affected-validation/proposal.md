@@ -7,8 +7,7 @@ The repository now uses Bun workspaces and Turborepo, but pull requests run ever
 - Update the CI workflow so pull-request linting, type checking, unit tests, and builds target only workspaces affected between the fetchable PR base branch and `HEAD`.
 - Preserve formatting as a repository-wide pull-request check and retain complete lint, type-check, test, build, and publication validation on pushes to `main`.
 - Make Git history available for the affected range and fail the relevant CI step when the PR base reference cannot be used.
-- Add contributor documentation for the affected-workspace behavior and its full-validation baseline.
-- Add workflow-level coverage for the PR and default-branch command selection without changing the public CLI, package registry, release process, or composite-action paths.
+- Keep the implementation scoped to CI/CD configuration without changing the public CLI, package registry, release process, composite-action paths, application code, or test suite.
 
 ## Capabilities
 
@@ -22,7 +21,7 @@ The repository now uses Bun workspaces and Turborepo, but pull requests run ever
 
 ## Impact
 
-- Affected code: `.github/workflows/ci.yml`, repository scripts or Turbo configuration if necessary, workflow tests, and contributor documentation.
+- Affected code: `.github/workflows/ci.yml`.
 - Affected specs: `repository-workspace`.
 - Dependencies: existing Bun workspaces and Turborepo; no new runtime dependency is intended.
 - Compatibility: the published `@nsxbet/playwright-orchestrator` package, its CLI, npmjs publication, and root-level GitHub Action paths remain unchanged.
