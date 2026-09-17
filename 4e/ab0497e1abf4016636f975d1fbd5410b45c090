@@ -1,0 +1,20 @@
+packages/jest-orchestrator/__tests__/core.test.ts
+  s_a366f4bba4f921::t_48951bf2827274 11,104-117
+  s_a366f4bba4f921::t_c90cd54d5696a3 118-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4eab0497e1abf4016636f975d1fbd5410b45c090",
+  "prompts": {},
+  "sessions": {
+    "s_a366f4bba4f921": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ad84-c2c2-7250-9966-d3f075c70c8d",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
