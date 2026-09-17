@@ -29,10 +29,11 @@ describe('Extract Timing Command', () => {
     try {
       fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
-      execSync('bun run build', { cwd: process.cwd(), stdio: 'pipe' });
+      const packageDirectory = path.resolve(import.meta.dirname, '..');
+      execSync('bun run build', { cwd: packageDirectory, stdio: 'pipe' });
       execSync(
         `node ./bin/run.js extract-timing --report-file "${reportPath}" --output-file "${outputPath}" --shard 1 --project "${project}"`,
-        { cwd: process.cwd(), stdio: 'pipe' },
+        { cwd: packageDirectory, stdio: 'pipe' },
       );
 
       const output = fs.readFileSync(outputPath, 'utf-8');

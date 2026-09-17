@@ -87,8 +87,8 @@ export function assignWithCKK(
 
   // Branch and bound search
   // effectiveLoads include penalty; actualLoads are real durations for output
-  const effectiveLoads = new Array(numShards).fill(0) as number[];
-  const actualLoads = new Array(numShards).fill(0) as number[];
+  const effectiveLoads = Array.from({ length: numShards }, () => 0);
+  const actualLoads = Array.from({ length: numShards }, () => 0);
   const shardTests: string[][] = Array.from({ length: numShards }, () => []);
   const shardFiles: Set<string>[] = Array.from(
     { length: numShards },
@@ -269,8 +269,8 @@ function assignWithLPTInternal(
   );
 
   // Track effective loads (with penalty) separately from actual durations
-  const effectiveLoads = new Array(numShards).fill(0) as number[];
-  const actualLoads = new Array(numShards).fill(0) as number[];
+  const effectiveLoads = Array.from({ length: numShards }, () => 0);
+  const actualLoads = Array.from({ length: numShards }, () => 0);
   const shardFiles: Set<string>[] = Array.from(
     { length: numShards },
     () => new Set<string>(),

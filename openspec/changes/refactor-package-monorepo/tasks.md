@@ -12,12 +12,12 @@
 
 ## 3. Automation and documentation
 
-- [ ] 3.1 Update root composite actions while preserving every `.github/actions/*` public path.
-- [ ] 3.2 Update CI, release, E2E, Act, and Verdaccio workflows for workspace paths and package artifacts.
-- [ ] 3.3 Update README, integration docs, examples, and path-based workflow triggers.
+- [x] 3.1 Update root composite actions while preserving every `.github/actions/*` public path.
+- [x] 3.2 Update CI, release, E2E, Act, and Verdaccio workflows for workspace paths and package artifacts.
+- [x] 3.3 Update README, integration docs, examples, and path-based workflow triggers.
 
 ## 4. Verification
 
-- [ ] 4.1 Run formatting, linting, type checking, unit tests, and build from the repository root.
-- [ ] 4.2 Verify package contents with `npm pack --dry-run` and clean-install/execute the tarball.
+- [x] 4.1 Run formatting, linting, type checking, unit tests, and build from the repository root.
+- [x] 4.2 Verify package contents with `npm pack --dry-run` and clean-install/execute the tarball.
 - [ ] 4.3 Run applicable Act and Verdaccio publication checks.

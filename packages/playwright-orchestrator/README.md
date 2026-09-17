@@ -98,10 +98,7 @@ No changes to `playwright.config.ts` are needed. Just use standard Playwright re
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  reporter: [
-    ["json", { outputFile: "playwright-report/results.json" }],
-    ["html"],
-  ],
+  reporter: [["json", { outputFile: "playwright-report/results.json" }], ["html"]],
 });
 ```
 
@@ -187,7 +184,7 @@ jobs:
           fi
 ```
 
-See [docs/external-integration.md](./docs/external-integration.md) for complete workflow with timing data persistence, `--last-failed` rerun support, and monorepo usage.
+See the [external integration guide](../../docs/external-integration.md) for the complete workflow with timing data persistence, `--last-failed` rerun support, and monorepo usage.
 
 ## CLI Commands
 
@@ -243,7 +240,7 @@ GitHub Actions cache is branch-scoped. We recommend a **promote-on-merge** patte
 2. PRs restore from their own cache, falling back to main
 3. When a PR is merged, promote the PR's cache to main
 
-See [Cache Strategy for PRs](./docs/external-integration.md#cache-strategy-for-prs) for implementation details.
+See [Cache Strategy for PRs](../../docs/external-integration.md#cache-strategy-for-prs) for implementation details.
 
 ## License
 
