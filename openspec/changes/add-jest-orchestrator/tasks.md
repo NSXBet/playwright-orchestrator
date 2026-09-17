@@ -20,4 +20,4 @@
 
 - [x] 4.1 Run formatting, lint, type-check, unit tests, builds, package dry-runs, and OpenSpec validation.
 - [x] 4.2 Run Action syntax checks and the basic and monorepo Jest E2E workflows with Act.
-- [ ] 4.3 Create a changeset for the new public Jest package and open the feature PR.
+- [x] 4.3 Create a changeset for the new public Jest package and open the feature PR.
