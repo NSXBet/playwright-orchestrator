@@ -1,0 +1,29 @@
+openspec/changes/update-pr-affected-validation/design.md
+  s_5809024f6f3f29::t_1f1484c4b5f6a8 52,57-58
+  s_5809024f6f3f29::t_d10103782a1bec 56
+openspec/changes/update-pr-affected-validation/proposal.md
+  s_5809024f6f3f29::t_5c82b44392fc30 10,24
+.github/workflows/ci.yml
+  s_5809024f6f3f29::t_8fe4aff10e1f53 16-17,26-29,31,34-36,39-42,44,47-49,57-58,64-67,69,72,74,79,84-85,91-95,108,110-111,113-116,118,121-123,133-134,140-143,145,148-150
+  s_5809024f6f3f29::t_3a336c6c1fb16a 30,32-33,43,45-46,68,70,80,90,96-107,109,117,119-120,129,144,146-147
+  s_5809024f6f3f29::t_313eb1b041223a 71
+  s_5809024f6f3f29::t_b56aae6ee668a0 73
+openspec/changes/update-pr-affected-validation/tasks.md
+  s_5809024f6f3f29::t_7ea9ecb500b102 1,3-5,7,9-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "46106a2f1ac444d84772f34b5a220e435d555b0f",
+  "prompts": {},
+  "sessions": {
+    "s_5809024f6f3f29": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0acb2-9c09-75a1-a7a9-28eb8ed0294e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
