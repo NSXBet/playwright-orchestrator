@@ -40,8 +40,9 @@ build: ## Build workspace packages
 clean: ## Remove generated workspace artifacts
 	rm -rf node_modules .turbo packages/*/dist packages/*/tsconfig.tsbuildinfo .timing-cache
 
-package-dry-run: build ## Inspect the publishable package contents
+package-dry-run: build ## Inspect all publishable package contents
 	cd packages/playwright-orchestrator && npm pack --dry-run
+	cd packages/jest-orchestrator && npm pack --dry-run
 
 # ============================================================================
 # EXAMPLES
@@ -90,12 +91,20 @@ act-test: act-check ## Run the CI workflow locally
 	$(act) pull_request -W .github/workflows/ci.yml $(ACT_ARGS)
 
 .PHONY: act-e2e
-act-e2e: act-check ## Run the basic E2E workflow locally
+act-e2e: act-check ## Run the basic Playwright E2E workflow locally
 	$(act) workflow_dispatch -W .github/workflows/e2e-example.yml $(ACT_ARGS) --artifact-server-path /tmp/act-artifacts
 
 .PHONY: act-e2e-monorepo
-act-e2e-monorepo: act-check ## Run the monorepo E2E workflow locally
+act-e2e-monorepo: act-check ## Run the monorepo Playwright E2E workflow locally
 	$(act) workflow_dispatch -W .github/workflows/e2e-monorepo.yml $(ACT_ARGS) --artifact-server-path /tmp/act-artifacts
+
+.PHONY: act-e2e-jest
+act-e2e-jest: act-check ## Run the basic Jest E2E workflow locally
+	$(act) workflow_dispatch -W .github/workflows/e2e-jest-example.yml $(ACT_ARGS) --artifact-server-path /tmp/act-artifacts
+
+.PHONY: act-e2e-jest-monorepo
+act-e2e-jest-monorepo: act-check ## Run the monorepo Jest E2E workflow locally
+	$(act) workflow_dispatch -W .github/workflows/e2e-jest-monorepo.yml $(ACT_ARGS) --artifact-server-path /tmp/act-artifacts
 
 .PHONY: act-publish
 act-publish: act-check ## Run Verdaccio publication validation locally

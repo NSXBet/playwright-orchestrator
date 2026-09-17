@@ -1,0 +1,138 @@
+# Example workflow for external Jest repositories.
+# Copy to .github/workflows/jest-e2e.yml and replace @main with a release tag.
+# Requires Jest 30+ with jest-circus and a project-local Jest dependency.
+
+name: Jest tests with orchestrator
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  SHARDS: 4
+  TIMING_FILE: jest-timing.json
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - uses: NSXBet/test-orchestrator/.github/actions/setup-jest-orchestrator@main
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.TIMING_FILE }}
+          key: jest-timing-${{ github.ref_name }}
+          restore-keys: |
+            jest-timing-${{ github.ref_name }}-
+            jest-timing-main-
+
+      - id: matrix
+        run: |
+          MATRIX=$(seq 1 "$SHARDS" | jq -R . | jq -sc '{shard: .}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+      - id: plan
+        uses: NSXBet/test-orchestrator/.github/actions/jest-orchestrate@main
+        with:
+          root: .
+          timing-file: ${{ env.TIMING_FILE }}
+          shards: ${{ env.SHARDS }}
+          # `file` is the default; set level: test to split files.
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jest-assignment
+          path: .orchestration/
+          include-hidden-files: true
+          retention-days: 1
+
+  test:
+    needs: orchestrate
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.orchestrate.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - uses: NSXBet/test-orchestrator/.github/actions/setup-jest-orchestrator@main
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-assignment
+          path: .orchestration
+
+      - uses: NSXBet/test-orchestrator/.github/actions/jest-get-shard@main
+        with:
+          assignment-file: .orchestration/assignment.json
+          shard-index: ${{ matrix.shard }}
+
+      # run-shard executes and extracts timings in one step.
+      - run: |
+          jest-orchestrator run-shard \
+            --root . \
+            --assignment .orchestration/assignment.json \
+            --shard ${{ matrix.shard }} \
+            --output shard-timing-${{ matrix.shard }}.json \
+            --report-output shard-report-${{ matrix.shard }}.json
+
+      - uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: jest-timing-shard-${{ matrix.shard }}
+          path: shard-timing-${{ matrix.shard }}.json
+          retention-days: 1
+          if-no-files-found: error
+
+  merge-timing:
+    needs: [orchestrate, test]
+    if: success() || failure()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: NSXBet/test-orchestrator/.github/actions/setup-jest-orchestrator@main
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.TIMING_FILE }}
+          key: jest-timing-${{ github.ref_name }}
+          restore-keys: jest-timing-main-
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-assignment
+          path: .orchestration
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jest-timing-shard-*
+          merge-multiple: true
+          path: timing-artifacts
+
+      - uses: NSXBet/test-orchestrator/.github/actions/jest-merge-timing@main
+        with:
+          existing-file: ${{ env.TIMING_FILE }}
+          new-files: timing-artifacts/shard-timing-*.json
+          output-file: ${{ env.TIMING_FILE }}
+          manifest: .orchestration/manifest.json
+
+      - uses: actions/cache/save@v4
+        with:
+          path: ${{ env.TIMING_FILE }}
+          key: jest-timing-${{ github.ref_name }}-${{ github.run_id }}

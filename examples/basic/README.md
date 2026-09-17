@@ -68,3 +68,23 @@ Example optimal assignment:
 - **Shard 3**: extra-long test 3 (90s) + medium test 1 (30s) + quick test 1 (10s) = ~130s (~2.17min)
 
 (Actual distribution may vary based on algorithm optimization)
+
+## Jest fixture
+
+The same directory also contains an independent Jest fixture under `jest-tests/`.
+It has 14 controlled-duration tests, including exact-selection hostile names such
+as pipes, dollar signs, backslashes, parentheses, and case variants.
+
+```bash
+cd examples/basic
+npm install
+npm run test:jest
+
+# From the repository root, discover, assign, and run one Jest shard.
+bun run build -- --filter=@nsxbet/jest-orchestrator
+./packages/jest-orchestrator/bin/run.js discover --root examples/basic --output jest-tests.json
+./packages/jest-orchestrator/bin/run.js assign --manifest jest-tests.json --shards 2 --output jest-assignment.json
+./packages/jest-orchestrator/bin/run.js run-shard --root examples/basic --assignment jest-assignment.json --shard 1 --output shard-timing-1.json
+```
+
+Run `make act-e2e-jest` to exercise the complete cached-timing GitHub Actions pipeline locally.

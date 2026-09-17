@@ -28,9 +28,14 @@ playwright-report/
 test-results/
 blob-report/
 
-# Timing data (local testing)
+# Timing and orchestration artifacts (local testing)
 timing-data.json
+jest-monorepo-timing.json
 shard-timing-*.json
+report-shard-*.json
+roundtrip-assignment.json
+.orchestration/
+reports/
 .act-timing/
 
 # Environment

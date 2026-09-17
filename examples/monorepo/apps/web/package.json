@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "test:list": "playwright test --list --reporter=json"
+    "test:list": "playwright test --list --reporter=json",
+    "test:jest": "jest --config jest.config.js"
   },
   "devDependencies": {
     "@estruyf/github-actions-reporter": "^1.8.0",
-    "@playwright/test": "1.56.0"
+    "@playwright/test": "1.56.0",
+    "jest": "30.2.0"
   }
 }

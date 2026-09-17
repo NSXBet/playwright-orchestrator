@@ -1,0 +1,299 @@
+name: E2E Jest Monorepo
+
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: Number of shards
+        required: false
+        default: "2"
+      level:
+        description: Assignment granularity (file | test)
+        required: false
+        default: file
+  pull_request:
+    paths:
+      - "packages/jest-orchestrator/**"
+      - "examples/monorepo/**"
+      - ".github/workflows/e2e-jest-monorepo.yml"
+      - ".github/actions/jest-*/**"
+
+jobs:
+  setup:
+    name: Package Jest orchestrator
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build package
+        run: bun run build -- --filter=@nsxbet/jest-orchestrator
+
+      - name: Create tarball
+        working-directory: packages/jest-orchestrator
+        run: npm pack
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-package-tarball
+          path: packages/jest-orchestrator/*.tgz
+          retention-days: 1
+
+  orchestrate:
+    name: Orchestrate Jest tests
+    needs: setup
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-package-tarball
+          path: packages/jest-orchestrator
+
+      - name: Install CLI from tarball
+        run: |
+          npm config set prefix "$HOME/.npm-global"
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+          npm install -g ./packages/jest-orchestrator/nsxbet-jest-orchestrator-*.tgz
+          "$HOME/.npm-global/bin/jest-orchestrator" --version
+
+      - name: Install monorepo dependencies
+        working-directory: examples/monorepo/apps/web
+        run: npm install
+
+      - name: Generate shard matrix
+        id: matrix
+        run: |
+          SHARDS="${{ github.event.inputs.shards || '2' }}"
+          MATRIX=$(seq 1 "$SHARDS" | jq -R . | jq -sc '{shard: .}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+      - name: Orchestrate tests
+        id: orchestrate
+        uses: ./.github/actions/jest-orchestrate
+        with:
+          root: examples/monorepo/apps/web
+          timing-file: jest-monorepo-timing.json
+          shards: ${{ github.event.inputs.shards || '2' }}
+          level: ${{ github.event.inputs.level || 'file' }}
+
+      - name: Upload assignment artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-orchestration-assignment
+          path: .orchestration/
+          retention-days: 1
+          include-hidden-files: true
+
+  test:
+    name: Jest shard ${{ matrix.shard }}
+    needs: [setup, orchestrate]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.orchestrate.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-package-tarball
+          path: packages/jest-orchestrator
+
+      - name: Install CLI from tarball
+        run: |
+          npm config set prefix "$HOME/.npm-global"
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+          npm install -g ./packages/jest-orchestrator/nsxbet-jest-orchestrator-*.tgz
+
+      - name: Install monorepo dependencies
+        working-directory: examples/monorepo/apps/web
+        run: npm install
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-orchestration-assignment
+          path: .orchestration
+
+      - name: Get shard assignment
+        id: shard
+        uses: ./.github/actions/jest-get-shard
+        with:
+          assignment-file: .orchestration/assignment.json
+          shard-index: ${{ matrix.shard }}
+
+      - name: Run Jest tests for this shard
+        id: run
+        working-directory: examples/monorepo/apps/web
+        run: |
+          set +e
+          jest-orchestrator run-shard \
+            --root . \
+            --assignment "${{ github.workspace }}/.orchestration/assignment.json" \
+            --shard ${{ matrix.shard }} \
+            --output shard-timing-${{ matrix.shard }}.json \
+            --report-output report-shard-${{ matrix.shard }}.json
+          EXIT_CODE=$?
+          set -e
+          if [ "$EXIT_CODE" -gt 1 ]; then
+            echo "::error::shard ${{ matrix.shard }} verification failed (exit $EXIT_CODE)"
+            exit "$EXIT_CODE"
+          fi
+          echo "Jest completed with exit $EXIT_CODE; intentional test failures are expected in this fixture."
+
+      - name: Annotate failures
+        if: success() || failure()
+        working-directory: examples/monorepo/apps/web
+        run: |
+          REPORT="report-shard-${{ matrix.shard }}.json"
+          if [ -f "$REPORT" ]; then
+            jest-orchestrator annotate --report "$REPORT" --shard ${{ matrix.shard }} --summary-append "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload timing artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-timing-shard-${{ matrix.shard }}
+          path: examples/monorepo/apps/web/shard-timing-${{ matrix.shard }}.json
+          if-no-files-found: error
+
+      - name: Upload JSON report
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-report-shard-${{ matrix.shard }}
+          path: examples/monorepo/apps/web/report-shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+
+  merge-reports:
+    name: Validate Jest reports
+    needs: [setup, orchestrate, test]
+    if: success() || failure()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-orchestration-assignment
+          path: .orchestration
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jest-report-shard-*
+          merge-multiple: true
+          path: reports
+
+      - name: Validate exact cross-shard coverage
+        run: |
+          node --input-type=module <<'EOF'
+          import { readFileSync, readdirSync } from "node:fs";
+
+          const assignment = JSON.parse(readFileSync(".orchestration/assignment.json"));
+          const selectedByShard = new Map(
+            assignment.shards.map((shard) => [
+              String(shard.shard),
+              shard.testIds.map((key) => {
+                const [, file, fullName] = JSON.parse(
+                  Buffer.from(key, "base64url").toString(),
+                );
+                return JSON.stringify([file, fullName]);
+              }),
+            ]),
+          );
+          const executedShardsByIdentity = new Map();
+          let selected = 0;
+          let observed = 0;
+
+          for (const file of readdirSync("reports").filter((name) => name.startsWith("report-shard-"))) {
+            const shard = file.match(/report-shard-(\d+)\.json$/)?.[1];
+            if (!shard || !selectedByShard.has(shard)) throw new Error(`unknown report artifact: ${file}`);
+            const expected = selectedByShard.get(shard);
+            const remaining = new Map();
+            for (const identity of expected) remaining.set(identity, (remaining.get(identity) ?? 0) + 1);
+            selected += expected.length;
+
+            const report = JSON.parse(readFileSync(`reports/${file}`));
+            for (const suite of report.testResults) {
+              for (const assertion of suite.assertionResults) {
+                const identity = JSON.stringify([suite.name, assertion.fullName]);
+                if (["passed", "failed"].includes(assertion.status)) {
+                  if (!remaining.has(identity)) throw new Error(`shard ${shard} executed an unassigned test: ${identity}`);
+                  const shards = executedShardsByIdentity.get(identity) ?? new Set();
+                  shards.add(shard);
+                  executedShardsByIdentity.set(identity, shards);
+                }
+                const count = remaining.get(identity) ?? 0;
+                if (count > 0) {
+                  remaining.set(identity, count - 1);
+                  observed++;
+                }
+              }
+            }
+            const missing = [...remaining.values()].reduce((sum, count) => sum + count, 0);
+            if (missing > 0) throw new Error(`shard ${shard} did not report ${missing} assigned test occurrence(s)`);
+          }
+
+          const duplicates = [...executedShardsByIdentity.values()].filter((shards) => shards.size > 1).length;
+          if (duplicates > 0) throw new Error(`${duplicates} test identity(ies) executed in more than one shard`);
+          if (selected !== observed) throw new Error(`assigned ${selected} but observed ${observed} selected test occurrences`);
+          console.log(`Exact shard coverage validated: ${selected} assigned and observed; ${duplicates} cross-shard duplicates.`);
+          EOF
+
+  merge:
+    name: Merge Jest timings
+    needs: [setup, orchestrate, test, merge-reports]
+    if: success() || failure()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-package-tarball
+          path: packages/jest-orchestrator
+
+      - name: Install CLI from tarball
+        run: |
+          npm config set prefix "$HOME/.npm-global"
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+          npm install -g ./packages/jest-orchestrator/nsxbet-jest-orchestrator-*.tgz
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jest-orchestration-assignment
+          path: .orchestration
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jest-timing-shard-*
+          merge-multiple: true
+          path: timing-artifacts
+
+      - name: Merge timing data
+        uses: ./.github/actions/jest-merge-timing
+        with:
+          new-files: timing-artifacts/shard-timing-*.json
+          output-file: jest-monorepo-timing.json
+          manifest: .orchestration/manifest.json
+
+      - name: Validate timing round trip
+        run: |
+          set -euo pipefail
+          ENTRIES=$(jq '[.projects[].files[]] | length' jest-monorepo-timing.json)
+          [ "$ENTRIES" -gt 0 ] || { echo "::error::no timing data was merged"; exit 1; }
+          jest-orchestrator assign \
+            --manifest .orchestration/manifest.json \
+            --timings jest-monorepo-timing.json \
+            --shards "${{ github.event.inputs.shards || '2' }}" \
+            --level "${{ github.event.inputs.level || 'file' }}" \
+            --output roundtrip-assignment.json
+          TOTAL=$(jq '.totalTests' roundtrip-assignment.json)
+          echo "✓ Timing round trip validated: $ENTRIES timing entries for $TOTAL discovered tests"
