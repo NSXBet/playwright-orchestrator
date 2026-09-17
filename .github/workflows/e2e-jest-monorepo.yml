@@ -488,6 +488,8 @@ jobs:
           WARM_PLANNED=$(jq '[.shards[].expectedDuration] | add' "$WARM")
           COLD_MEASURED=$(jq '[.measurements[]] | length' timing-artifacts/shard-timing-*.json | awk '{ total += $1 } END { print total }')
           WARM_MEASURED=$(jq '[.measurements[]] | length' warm-timing-artifacts/warm-timing-*.json | awk '{ total += $1 } END { print total }')
+          FIRST=$(jq '[.projects[].files[]] | length' warm-start-inputs/timing.json)
+          REPEATED=$(jq '[.projects[].files[] | select(.runs >= 2)] | length' warm-jest-monorepo-timing.json)
           PLACEMENT_CHANGED=$(jq -n --slurpfile cold "$COLD" --slurpfile warm "$WARM" '$cold[0].shards != $warm[0].shards')
           {
             echo "## Jest cold-to-warm lifecycle verdict"
