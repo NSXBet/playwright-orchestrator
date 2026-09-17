@@ -12,5 +12,5 @@
 ## 3. Verification
 
 - [x] 3.1 Update workflow-facing documentation for empty plans and lifecycle diagnostics.
-- [ ] 3.2 Run formatting, lint, type-check, unit tests, workflow linting, and both monorepo E2Es through GitHub Actions.
-- [ ] 3.3 Create a changeset and open a PR linked to issue #56.
+- [x] 3.2 Run formatting, lint, type-check, unit tests, workflow linting, and both monorepo E2Es through GitHub Actions.
+- [x] 3.3 Create a changeset and open a PR linked to issue #56.
