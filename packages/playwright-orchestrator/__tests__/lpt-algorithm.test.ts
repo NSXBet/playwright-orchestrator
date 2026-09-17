@@ -1,18 +1,18 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 import {
   assignWithLPT,
   calculateBalanceRatio,
   formatAssignResult,
-} from '../src/core/lpt-algorithm.js';
-import type { FileWithDuration } from '../src/core/types.js';
+} from "../src/core/lpt-algorithm.js";
+import type { FileWithDuration } from "../src/core/types.js";
 
-describe('assignWithLPT', () => {
-  test('distributes files evenly across shards', () => {
+describe("assignWithLPT", () => {
+  test("distributes files evenly across shards", () => {
     const files: FileWithDuration[] = [
-      { file: 'a.spec.ts', duration: 1000, estimated: false },
-      { file: 'b.spec.ts', duration: 1000, estimated: false },
-      { file: 'c.spec.ts', duration: 1000, estimated: false },
-      { file: 'd.spec.ts', duration: 1000, estimated: false },
+      { file: "a.spec.ts", duration: 1000, estimated: false },
+      { file: "b.spec.ts", duration: 1000, estimated: false },
+      { file: "c.spec.ts", duration: 1000, estimated: false },
+      { file: "d.spec.ts", duration: 1000, estimated: false },
     ];
 
     const result = assignWithLPT(files, 2);
@@ -24,11 +24,11 @@ describe('assignWithLPT', () => {
     expect(result[1]?.expectedDuration).toBe(2000);
   });
 
-  test('assigns longest jobs first', () => {
+  test("assigns longest jobs first", () => {
     const files: FileWithDuration[] = [
-      { file: 'a.spec.ts', duration: 3000, estimated: false },
-      { file: 'b.spec.ts', duration: 2000, estimated: false },
-      { file: 'c.spec.ts', duration: 1000, estimated: false },
+      { file: "a.spec.ts", duration: 3000, estimated: false },
+      { file: "b.spec.ts", duration: 2000, estimated: false },
+      { file: "c.spec.ts", duration: 1000, estimated: false },
     ];
 
     const result = assignWithLPT(files, 2);
@@ -39,7 +39,7 @@ describe('assignWithLPT', () => {
     expect(result[1]?.expectedDuration).toBe(3000);
   });
 
-  test('handles empty file list', () => {
+  test("handles empty file list", () => {
     const result = assignWithLPT([], 3);
 
     expect(result).toHaveLength(3);
@@ -49,10 +49,8 @@ describe('assignWithLPT', () => {
     }
   });
 
-  test('handles single file', () => {
-    const files: FileWithDuration[] = [
-      { file: 'a.spec.ts', duration: 5000, estimated: false },
-    ];
+  test("handles single file", () => {
+    const files: FileWithDuration[] = [{ file: "a.spec.ts", duration: 5000, estimated: false }];
 
     const result = assignWithLPT(files, 3);
 
@@ -61,10 +59,10 @@ describe('assignWithLPT', () => {
     expect(result.find((s) => s.files.length > 0)?.expectedDuration).toBe(5000);
   });
 
-  test('handles more shards than files', () => {
+  test("handles more shards than files", () => {
     const files: FileWithDuration[] = [
-      { file: 'a.spec.ts', duration: 1000, estimated: false },
-      { file: 'b.spec.ts', duration: 2000, estimated: false },
+      { file: "a.spec.ts", duration: 1000, estimated: false },
+      { file: "b.spec.ts", duration: 2000, estimated: false },
     ];
 
     const result = assignWithLPT(files, 5);
@@ -74,10 +72,8 @@ describe('assignWithLPT', () => {
     expect(shardsWithFiles).toHaveLength(2);
   });
 
-  test('shard indices are 1-based', () => {
-    const files: FileWithDuration[] = [
-      { file: 'a.spec.ts', duration: 1000, estimated: false },
-    ];
+  test("shard indices are 1-based", () => {
+    const files: FileWithDuration[] = [{ file: "a.spec.ts", duration: 1000, estimated: false }];
 
     const result = assignWithLPT(files, 3);
 
@@ -87,28 +83,28 @@ describe('assignWithLPT', () => {
   });
 });
 
-describe('formatAssignResult', () => {
-  test('converts assignments to result format', () => {
+describe("formatAssignResult", () => {
+  test("converts assignments to result format", () => {
     const files: FileWithDuration[] = [
-      { file: 'a.spec.ts', duration: 1000, estimated: false },
-      { file: 'b.spec.ts', duration: 2000, estimated: true },
+      { file: "a.spec.ts", duration: 1000, estimated: false },
+      { file: "b.spec.ts", duration: 2000, estimated: true },
     ];
 
     const assignments = assignWithLPT(files, 2);
-    const result = formatAssignResult(assignments, ['b.spec.ts']);
+    const result = formatAssignResult(assignments, ["b.spec.ts"]);
 
     expect(result.totalFiles).toBe(2);
-    expect(result.estimatedFiles).toEqual(['b.spec.ts']);
+    expect(result.estimatedFiles).toEqual(["b.spec.ts"]);
     expect(Object.keys(result.shards)).toHaveLength(2);
     expect(Object.keys(result.expectedDurations)).toHaveLength(2);
   });
 });
 
-describe('calculateBalanceRatio', () => {
-  test('returns 1.0 for perfectly balanced shards', () => {
+describe("calculateBalanceRatio", () => {
+  test("returns 1.0 for perfectly balanced shards", () => {
     const files: FileWithDuration[] = [
-      { file: 'a.spec.ts', duration: 1000, estimated: false },
-      { file: 'b.spec.ts', duration: 1000, estimated: false },
+      { file: "a.spec.ts", duration: 1000, estimated: false },
+      { file: "b.spec.ts", duration: 1000, estimated: false },
     ];
 
     const assignments = assignWithLPT(files, 2);
@@ -117,10 +113,10 @@ describe('calculateBalanceRatio', () => {
     expect(ratio).toBe(1.0);
   });
 
-  test('returns ratio for unbalanced shards', () => {
+  test("returns ratio for unbalanced shards", () => {
     const files: FileWithDuration[] = [
-      { file: 'a.spec.ts', duration: 3000, estimated: false },
-      { file: 'b.spec.ts', duration: 1000, estimated: false },
+      { file: "a.spec.ts", duration: 3000, estimated: false },
+      { file: "b.spec.ts", duration: 1000, estimated: false },
     ];
 
     const assignments = assignWithLPT(files, 2);
@@ -129,7 +125,7 @@ describe('calculateBalanceRatio', () => {
     expect(ratio).toBe(3.0);
   });
 
-  test('handles empty shards', () => {
+  test("handles empty shards", () => {
     const assignments = assignWithLPT([], 2);
     const ratio = calculateBalanceRatio(assignments);
 

@@ -7,7 +7,6 @@
 - [#46](https://github.com/NSXBet/playwright-orchestrator/pull/46) [`c9dd067`](https://github.com/NSXBet/playwright-orchestrator/commit/c9dd0676097d0a5eae830b7aa5a9dcb2e385d752) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Adopt Playwright's --test-list for pre-execution test filtering.
 
   **BREAKING CHANGES:**
-
   - Minimum Playwright version: 1.56+ (introduces `--test-list` CLI flag)
   - Removed `fixture` export (`withOrchestratorFilter`, `shouldRunTest`)
   - Removed `reporter` export (custom reporter)
@@ -19,13 +18,11 @@
   - `orchestrate` action outputs `test-list-files` instead of `shard-files`
 
   **Added:**
-
   - `assign` command JSON output includes `testListFiles` with Playwright --test-list formatted content per shard
   - `toTestListFormat` and `toTestListFile` functions for test ID format conversion
   - `loadTestListWithConfig` function exposing rootDir/testDir from Playwright config
 
   **Migration:**
-
   - Remove orchestrator reporter and fixture from `playwright.config.ts` and test setup
   - Use `--test-list` flag instead of `ORCHESTRATOR_SHARD_FILE` env var
   - Update CI workflows: `shard-files` → `test-list-files`, `shard-file` → `test-list-file`
@@ -47,7 +44,6 @@
 ### Major Changes
 
 - [#42](https://github.com/NSXBet/playwright-orchestrator/pull/42) [`0923e22`](https://github.com/NSXBet/playwright-orchestrator/commit/0923e224c5d12b92feb9231533d68560b6f7a917) Thanks [@gtkatakura](https://github.com/gtkatakura)! - v1: Breaking changes for stricter defaults
-
   - Removed deprecated `setupOrchestratorFilter` — use `withOrchestratorFilter` instead
   - `--shard-file` is now required on `extract-timing` (was optional)
   - `--project` is now required on `extract-timing` (was optional, defaulted to 'default')
@@ -56,7 +52,6 @@
 ### Minor Changes
 
 - [#42](https://github.com/NSXBet/playwright-orchestrator/pull/42) [`0923e22`](https://github.com/NSXBet/playwright-orchestrator/commit/0923e224c5d12b92feb9231533d68560b6f7a917) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Add report filtering to remove orchestrator-skipped tests
-
   - Added `filterJson` reporter option to remove non-shard specs from JSON reports using test-ID matching, with stats recalculation
   - Added `filter-report` CLI command and GitHub Action to remove orchestrator-skipped tests from merged reports
 
@@ -67,13 +62,11 @@
 - [#40](https://github.com/NSXBet/playwright-orchestrator/pull/40) [`fbde927`](https://github.com/NSXBet/playwright-orchestrator/commit/fbde9274a028d12b2bd21ca6db646f91e7fe8614) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Fix extract-timing path mismatch and duplicate filename bugs
 
   **Path Mismatch Bug:**
-
   - Fixed test ID generation in `extract-timing` where `suite.file` paths were not correctly resolved relative to `testDir`
   - Now uses `config.rootDir` from the Playwright JSON report as the canonical base for resolving all paths
   - This ensures consistent test IDs regardless of CI environment absolute paths (e.g., Docker container paths)
 
   **Duplicate Filename Bug:**
-
   - Fixed root suite title (filename) being incorrectly included in test IDs
   - Test IDs were generated as `file.spec.ts::file.spec.ts::Describe::test` instead of `file.spec.ts::Describe::test`
   - Added `isRootSuite` parameter to skip the root suite title, aligning with `test-discovery.ts` behavior
@@ -87,19 +80,16 @@
 - [#37](https://github.com/NSXBet/playwright-orchestrator/pull/37) [`3431033`](https://github.com/NSXBet/playwright-orchestrator/commit/3431033d2f9bfbefa8a0771d2cd4701dd602155f) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Simplify orchestrate action by making inputs required
 
   **Breaking changes to the `orchestrate` action:**
-
   - `test-list` is now **required** - You must generate the test list using `npx playwright test --list --reporter=json > test-list.json` in your workflow before calling this action
   - `timing-file` is now **required** - You must specify the path to your timing data file (the file doesn't need to exist on first run)
 
   **Removed inputs:**
-
   - `test-dir` - Removed to prevent incorrect usage
   - `config-dir` - Removed to prevent incorrect usage
   - `glob-pattern` - Removed (was only used with test-dir)
   - `project` - Removed from action (was only used with test-dir for discovery)
 
   **Removed CLI command:**
-
   - `list-tests` - Removed as users should generate test list directly with Playwright
 
   **Why this change:**
@@ -138,7 +128,6 @@
 
   **Path Resolution:**
   All components now consistently use `project.testDir` as the single source of truth:
-
   - `test-discovery.ts`: Uses `project.testDir` from JSON config (no fallback to `config.rootDir`)
   - `fixture.ts`: Validates `testInfo.project.testDir` is defined
   - `reporter.ts`: Requires `project.testDir` (no fallback chain)
@@ -167,7 +156,6 @@
 - [#31](https://github.com/NSXBet/playwright-orchestrator/pull/31) [`dd56807`](https://github.com/NSXBet/playwright-orchestrator/commit/dd5680714517d6b75d5b588a51660e0aac9e1188) Thanks [@gtkatakura](https://github.com/gtkatakura)! - fix: resolve test ID path mismatch (rootDir vs testDir)
 
   All components now consistently use `project.testDir` as the single source of truth for path resolution:
-
   - `test-discovery.ts`: Uses `project.testDir` from JSON config (no fallback to `config.rootDir`)
   - `fixture.ts`: Validates `testInfo.project.testDir` is defined
   - `reporter.ts`: Requires `project.testDir` (no fallback chain)
@@ -183,7 +171,6 @@
 - [#29](https://github.com/NSXBet/playwright-orchestrator/pull/29) [`8919b03`](https://github.com/NSXBet/playwright-orchestrator/commit/8919b03b81a45f1334ddb4c822a515c274384753) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Fix test ID path mismatch in monorepo setups
 
   When the orchestrator runs from a monorepo root but tests run from a subdirectory, the test IDs would not match because both used `process.cwd()` to generate relative paths:
-
   - Orchestrator (CWD: repo root): `apps/bet-client/src/test/e2e/login.spec.ts::...`
   - Fixture (CWD: `apps/bet-client/`): `src/test/e2e/login.spec.ts::...`
 
@@ -223,7 +210,6 @@
   not in the current shard.
 
   ### New Features
-
   - **Fixture module** (`@nsxbet/playwright-orchestrator/fixture`):
     - `setupOrchestratorFilter(test)` - Sets up beforeEach hook for automatic filtering
     - `shouldRunTest(testInfo)` - Manual check if a test should run
@@ -239,7 +225,6 @@
   ```
 
   ### Bug Fixes
-
   - Fixed reporter test ID generation to exclude project name and filename from titlePath
   - Reporter now correctly builds test IDs matching the orchestrator format
 
@@ -263,12 +248,10 @@
 - [#22](https://github.com/NSXBet/playwright-orchestrator/pull/22) [`8c1f0c1`](https://github.com/NSXBet/playwright-orchestrator/commit/8c1f0c177627a350e3e75974231fb5d2b4fd85bb) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Fix test ID path resolution to match reporter format
 
   The orchestrator was generating test IDs with incorrect file paths and duplicated filenames:
-
   - File paths were just filenames instead of relative paths from CWD
   - Root suite title (filename) was included in titlePath, causing duplication
 
   Fixed by:
-
   - Using `config.rootDir` from Playwright JSON to resolve relative file paths
   - Skipping root suite title from titlePath (it's the filename, redundant with file)
 
@@ -296,14 +279,12 @@
 - [#18](https://github.com/NSXBet/playwright-orchestrator/pull/18) [`118f16d`](https://github.com/NSXBet/playwright-orchestrator/commit/118f16de276f7b00db07e082a746d3ff56b2dcbe) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Remove backward compatibility with legacy models and add reporter as package export
 
   ### New Features
-
   - **Reporter as package export**: Import the reporter directly without copying files:
     ```typescript
     reporter: [["@nsxbet/playwright-orchestrator/reporter"], ["html"]];
     ```
 
   ### Breaking Changes
-
   - **Timing Data V1 no longer supported**: Only V2 (test-level) format is accepted. V1 files will be treated as empty data.
   - **Grep patterns removed**: The `--grep` based filtering is removed in favor of reporter-based filtering.
   - **File:line locations removed**: The `buildTestLocation()` function and related outputs are removed.
@@ -312,7 +293,6 @@
     - `get-shard`: Removed `test-args`, `grep-file` outputs; use `shard-file` instead
 
   ### Migration
-
   1. Add the reporter to your `playwright.config.ts`:
 
      ```typescript
@@ -334,7 +314,6 @@
 ### Patch Changes
 
 - [`3b3b6a0`](https://github.com/NSXBet/playwright-orchestrator/commit/3b3b6a0546ab4a7824b7bb3a787e98effd670662) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Fix grep patterns to use full title path for exact test matching
-
   - Use full title path (e.g., "describe › test title") instead of just test title
   - This fixes duplicate test matching for tests with the same name in different describe blocks
   - get-shard action now prefers grep patterns over file:line locations (file:line doesn't work reliably for parameterized tests)
@@ -344,7 +323,6 @@
 ### Minor Changes
 
 - [`ba05fe7`](https://github.com/NSXBet/playwright-orchestrator/commit/ba05fe7f2494eb0dbe278ba110bfc830a9074aa1) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Add test locations output for exact test filtering
-
   - Add `line` and `column` fields to `DiscoveredTest` interface
   - Extract line/column from Playwright JSON output
   - Add `testLocations` output (file:line format) to assign command
@@ -379,7 +357,6 @@
   ```
 
   Benefits:
-
   - More robust: Uses the same Playwright setup that runs tests
   - More debuggable: If `--list` fails, it fails visibly in the workflow step
   - Simpler action: No internal test discovery, just assignment algorithm
@@ -398,7 +375,6 @@
   file and returned 0 tests, causing fallback to the less accurate regex-based parser.
 
   Changes:
-
   - Added `--config-dir` / `-c` flag to `assign` command
   - Added `config-dir` input to the `orchestrate` GitHub Action
   - Updated `discoverTests()` to accept optional `configDir` parameter
@@ -410,13 +386,11 @@
 - [#8](https://github.com/NSXBet/playwright-orchestrator/pull/8) [`52c1fb5`](https://github.com/NSXBet/playwright-orchestrator/commit/52c1fb5a8520c3d0aa249e74d877e6d28dcc58e5) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Fix test discovery to use Playwright --list instead of regex parsing
 
   The `assign` command was always using the fallback regex-based file parser (`discoverTestsFromFiles`) instead of using Playwright's `--list` command (`discoverTests`). This caused:
-
   - Parameterized tests (using `test.each`, data-driven tests) to not be expanded
   - Tests with template literals in names (e.g., `${variable}`) to appear as single tests
   - Significant undercounting of tests (e.g., 88 discovered vs 177 actual tests)
 
   Changes:
-
   - `assign` command now tries `discoverTests()` (Playwright --list) first for accurate test discovery
   - Falls back to `discoverTestsFromFiles()` only if Playwright --list fails
   - Added `--project` flag to filter by Playwright project name
@@ -438,7 +412,6 @@
 ### Minor Changes
 
 - [#3](https://github.com/NSXBet/playwright-orchestrator/pull/3) [`ee93c37`](https://github.com/NSXBet/playwright-orchestrator/commit/ee93c37be21c6e9a2e10ba4bb9b7e90ea496eff3) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Add external usage support with storage-agnostic GitHub Actions
-
   - New `setup-orchestrator` action for external repositories
   - Refactored actions to be storage-agnostic (user controls cache/artifacts)
   - Native sharding fallback when orchestrator fails

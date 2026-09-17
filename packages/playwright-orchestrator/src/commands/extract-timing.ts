@@ -1,12 +1,11 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { Command, Flags } from '@oclif/core';
-import type { PlaywrightReport, ShardTimingArtifact } from '../core/index.js';
-import { buildTestId } from '../core/index.js';
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { Command, Flags } from "@oclif/core";
+import type { PlaywrightReport, ShardTimingArtifact } from "../core/index.js";
+import { buildTestId } from "../core/index.js";
 
 export default class ExtractTiming extends Command {
-  static override description =
-    'Extract timing data from Playwright JSON report';
+  static override description = "Extract timing data from Playwright JSON report";
 
   static override examples = [
     '<%= config.bin %> extract-timing --report-file ./playwright-report/results.json --output-file ./timing.json --project "chromium"',
@@ -14,46 +13,46 @@ export default class ExtractTiming extends Command {
   ];
 
   static override flags = {
-    'report-file': Flags.string({
-      char: 'r',
-      description: 'Path to Playwright JSON report file',
+    "report-file": Flags.string({
+      char: "r",
+      description: "Path to Playwright JSON report file",
       required: true,
     }),
-    'output-file': Flags.string({
-      char: 'o',
-      description: 'Path to write timing JSON output',
+    "output-file": Flags.string({
+      char: "o",
+      description: "Path to write timing JSON output",
     }),
     shard: Flags.integer({
-      char: 's',
-      description: 'Shard index for the artifact',
+      char: "s",
+      description: "Shard index for the artifact",
       default: 1,
     }),
     project: Flags.string({
-      char: 'p',
-      description: 'Playwright project name',
+      char: "p",
+      description: "Playwright project name",
       required: true,
     }),
     verbose: Flags.boolean({
-      char: 'v',
-      description: 'Show verbose output',
+      char: "v",
+      description: "Show verbose output",
       default: false,
     }),
   };
 
   // Base directory for path resolution (resolved testDir)
-  private testDir: string = '';
+  private testDir: string = "";
   // Root directory from Playwright config (where config file is)
-  private rootDir: string = '';
+  private rootDir: string = "";
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtractTiming);
 
     // Read Playwright report
-    const reportPath = path.resolve(flags['report-file']);
+    const reportPath = path.resolve(flags["report-file"]);
     let report: PlaywrightReport;
 
     try {
-      const content = fs.readFileSync(reportPath, 'utf-8');
+      const content = fs.readFileSync(reportPath, "utf-8");
       report = JSON.parse(content) as PlaywrightReport;
     } catch {
       this.error(`Failed to read Playwright report: ${reportPath}`);
@@ -73,9 +72,7 @@ export default class ExtractTiming extends Command {
     const testDurations = this.extractTestDurations(report);
 
     if (flags.verbose) {
-      this.log(
-        `Extracted timing for ${Object.keys(testDurations).length} tests`,
-      );
+      this.log(`Extracted timing for ${Object.keys(testDurations).length} tests`);
     }
 
     // Create artifact
@@ -88,10 +85,10 @@ export default class ExtractTiming extends Command {
     const output = JSON.stringify(artifact, null, 2);
 
     // Output
-    if (flags['output-file']) {
-      fs.writeFileSync(flags['output-file'], output, 'utf-8');
+    if (flags["output-file"]) {
+      fs.writeFileSync(flags["output-file"], output, "utf-8");
       if (flags.verbose) {
-        this.log(`Wrote timing data to ${flags['output-file']}`);
+        this.log(`Wrote timing data to ${flags["output-file"]}`);
       }
     } else {
       this.log(output);
@@ -103,9 +100,7 @@ export default class ExtractTiming extends Command {
    *
    * Each test is identified by: file::describe::testTitle
    */
-  private extractTestDurations(
-    report: PlaywrightReport,
-  ): Record<string, number> {
+  private extractTestDurations(report: PlaywrightReport): Record<string, number> {
     const testDurations: Record<string, number> = {};
 
     for (const suite of report.suites) {
@@ -127,7 +122,7 @@ export default class ExtractTiming extends Command {
    * @param isRootSuite - Whether this is a root file suite (title is filename, should be skipped)
    */
   private extractTestsFromSuite(
-    suite: PlaywrightReport['suites'][0],
+    suite: PlaywrightReport["suites"][0],
     parentTitles: string[],
     testDurations: Record<string, number>,
     isRootSuite = false,
@@ -137,7 +132,7 @@ export default class ExtractTiming extends Command {
     // Nested suites (describe blocks) have meaningful titles to include
     // This matches test-discovery.ts behavior exactly
     const currentTitles =
-      !isRootSuite && suite.title && suite.title !== ''
+      !isRootSuite && suite.title && suite.title !== ""
         ? [...parentTitles, suite.title]
         : parentTitles;
 
@@ -188,30 +183,28 @@ export default class ExtractTiming extends Command {
    * This ensures consistent test IDs regardless of container path differences.
    */
   private normalizeFilePath(filePath: string): string {
-    const normalizedFile = filePath.replace(/\\/g, '/');
-    const normalizedTestDir = this.testDir.replace(/\\/g, '/');
-    const normalizedRootDir = this.rootDir.replace(/\\/g, '/');
+    const normalizedFile = filePath.replace(/\\/g, "/");
+    const normalizedTestDir = this.testDir.replace(/\\/g, "/");
+    const normalizedRootDir = this.rootDir.replace(/\\/g, "/");
 
     // suite.file in Playwright JSON report is relative to rootDir
     // Resolve it to get the "logical" absolute path
     const absoluteFile = path.isAbsolute(normalizedFile)
       ? normalizedFile
-      : path.join(normalizedRootDir, normalizedFile).replace(/\\/g, '/');
+      : path.join(normalizedRootDir, normalizedFile).replace(/\\/g, "/");
 
     // testDir might be relative to rootDir, resolve it
     const absoluteTestDir = path.isAbsolute(normalizedTestDir)
       ? normalizedTestDir
-      : path.join(normalizedRootDir, normalizedTestDir).replace(/\\/g, '/');
+      : path.join(normalizedRootDir, normalizedTestDir).replace(/\\/g, "/");
 
     // Now compute relative path from testDir to file
     // Both are now in the same "logical" path space
-    const relativePath = path
-      .relative(absoluteTestDir, absoluteFile)
-      .replace(/\\/g, '/');
+    const relativePath = path.relative(absoluteTestDir, absoluteFile).replace(/\\/g, "/");
 
     // Sanity check: result should not start with ../
     // If it does, the file is outside testDir which shouldn't happen
-    if (relativePath.startsWith('../')) {
+    if (relativePath.startsWith("../")) {
       // Log warning but continue - use basename as fallback
       // This handles edge cases where paths are truly mismatched
       return path.basename(filePath);
@@ -235,32 +228,31 @@ export default class ExtractTiming extends Command {
 
     if (!config) {
       this.error(
-        '[Orchestrator] Report has no config section. ' +
-          'Ensure you are using Playwright JSON reporter with config output enabled.',
+        "[Orchestrator] Report has no config section. " +
+          "Ensure you are using Playwright JSON reporter with config output enabled.",
       );
     }
 
     // rootDir is where playwright.config.ts is located
     if (!config.rootDir) {
       this.error(
-        '[Orchestrator] Report has no rootDir in config. ' +
-          'This is required to resolve test file paths correctly.',
+        "[Orchestrator] Report has no rootDir in config. " +
+          "This is required to resolve test file paths correctly.",
       );
     }
 
     if (!config.projects || config.projects.length === 0) {
       this.error(
-        '[Orchestrator] Report has no projects in config. ' +
-          'Ensure your playwright.config.ts has at least one project configured.',
+        "[Orchestrator] Report has no projects in config. " +
+          "Ensure your playwright.config.ts has at least one project configured.",
       );
     }
 
     // Find the matching project
-    const project =
-      config.projects.find((p) => p.name === projectName) || config.projects[0];
+    const project = config.projects.find((p) => p.name === projectName) || config.projects[0];
 
     if (!project) {
-      const availableProjects = config.projects.map((p) => p.name).join(', ');
+      const availableProjects = config.projects.map((p) => p.name).join(", ");
       this.error(
         `[Orchestrator] Project "${projectName}" not found in report config. ` +
           `Available projects: ${availableProjects}`,
@@ -270,7 +262,7 @@ export default class ExtractTiming extends Command {
     if (!project.testDir) {
       this.error(
         `[Orchestrator] Project "${project.name}" has no testDir in report config. ` +
-          'Ensure your playwright.config.ts project has testDir set.',
+          "Ensure your playwright.config.ts project has testDir set.",
       );
     }
 

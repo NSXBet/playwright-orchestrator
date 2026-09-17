@@ -1,17 +1,14 @@
-import { describe, expect, test } from 'bun:test';
-import {
-  assignWithCKK,
-  calculateLowerBound,
-} from '../src/core/ckk-algorithm.js';
-import type { TestWithDuration } from '../src/core/types.js';
+import { describe, expect, test } from "bun:test";
+import { assignWithCKK, calculateLowerBound } from "../src/core/ckk-algorithm.js";
+import type { TestWithDuration } from "../src/core/types.js";
 
-describe('assignWithCKK', () => {
-  test('finds optimal or near-optimal solution for small input', () => {
+describe("assignWithCKK", () => {
+  test("finds optimal or near-optimal solution for small input", () => {
     const tests: TestWithDuration[] = [
-      { testId: 'a::test1', file: 'a.spec.ts', duration: 10, estimated: false },
-      { testId: 'a::test2', file: 'a.spec.ts', duration: 20, estimated: false },
-      { testId: 'b::test1', file: 'b.spec.ts', duration: 30, estimated: false },
-      { testId: 'b::test2', file: 'b.spec.ts', duration: 40, estimated: false },
+      { testId: "a::test1", file: "a.spec.ts", duration: 10, estimated: false },
+      { testId: "a::test2", file: "a.spec.ts", duration: 20, estimated: false },
+      { testId: "b::test1", file: "b.spec.ts", duration: 30, estimated: false },
+      { testId: "b::test2", file: "b.spec.ts", duration: 40, estimated: false },
     ];
 
     const result = assignWithCKK(tests, 2, 1000);
@@ -23,29 +20,29 @@ describe('assignWithCKK', () => {
     expect(result.assignments).toHaveLength(2);
   });
 
-  test('distributes tests evenly', () => {
+  test("distributes tests evenly", () => {
     const tests: TestWithDuration[] = [
       {
-        testId: 'a::test1',
-        file: 'a.spec.ts',
+        testId: "a::test1",
+        file: "a.spec.ts",
         duration: 100,
         estimated: false,
       },
       {
-        testId: 'a::test2',
-        file: 'a.spec.ts',
+        testId: "a::test2",
+        file: "a.spec.ts",
         duration: 100,
         estimated: false,
       },
       {
-        testId: 'b::test1',
-        file: 'b.spec.ts',
+        testId: "b::test1",
+        file: "b.spec.ts",
         duration: 100,
         estimated: false,
       },
       {
-        testId: 'b::test2',
-        file: 'b.spec.ts',
+        testId: "b::test2",
+        file: "b.spec.ts",
         duration: 100,
         estimated: false,
       },
@@ -58,7 +55,7 @@ describe('assignWithCKK', () => {
     expect(result.assignments[1]?.expectedDuration).toBe(200);
   });
 
-  test('handles empty input', () => {
+  test("handles empty input", () => {
     const result = assignWithCKK([], 3, 100);
 
     expect(result.assignments).toHaveLength(3);
@@ -66,11 +63,11 @@ describe('assignWithCKK', () => {
     expect(result.isOptimal).toBe(true);
   });
 
-  test('handles single test', () => {
+  test("handles single test", () => {
     const tests: TestWithDuration[] = [
       {
-        testId: 'a::test1',
-        file: 'a.spec.ts',
+        testId: "a::test1",
+        file: "a.spec.ts",
         duration: 100,
         estimated: false,
       },
@@ -82,17 +79,17 @@ describe('assignWithCKK', () => {
     expect(result.isOptimal).toBe(true);
   });
 
-  test('handles more shards than tests', () => {
+  test("handles more shards than tests", () => {
     const tests: TestWithDuration[] = [
       {
-        testId: 'a::test1',
-        file: 'a.spec.ts',
+        testId: "a::test1",
+        file: "a.spec.ts",
         duration: 100,
         estimated: false,
       },
       {
-        testId: 'b::test1',
-        file: 'b.spec.ts',
+        testId: "b::test1",
+        file: "b.spec.ts",
         duration: 200,
         estimated: false,
       },
@@ -105,11 +102,11 @@ describe('assignWithCKK', () => {
     expect(result.isOptimal).toBe(true);
   });
 
-  test('throws on invalid shard count', () => {
+  test("throws on invalid shard count", () => {
     const tests: TestWithDuration[] = [
       {
-        testId: 'a::test1',
-        file: 'a.spec.ts',
+        testId: "a::test1",
+        file: "a.spec.ts",
         duration: 100,
         estimated: false,
       },
@@ -118,7 +115,7 @@ describe('assignWithCKK', () => {
     expect(() => assignWithCKK(tests, 0, 100)).toThrow();
   });
 
-  test('falls back to LPT on timeout', () => {
+  test("falls back to LPT on timeout", () => {
     // Create a moderately complex input that might timeout
     const tests: TestWithDuration[] = Array.from({ length: 30 }, (_, i) => ({
       testId: `test${i}::test`,
@@ -132,28 +129,25 @@ describe('assignWithCKK', () => {
 
     expect(result.assignments).toHaveLength(5);
     // Should still produce valid distribution
-    const totalTests = result.assignments.reduce(
-      (sum, a) => sum + a.tests.length,
-      0,
-    );
+    const totalTests = result.assignments.reduce((sum, a) => sum + a.tests.length, 0);
     expect(totalTests).toBe(30);
   });
 });
 
-describe('calculateLowerBound', () => {
-  test('returns 0 for empty input', () => {
+describe("calculateLowerBound", () => {
+  test("returns 0 for empty input", () => {
     expect(calculateLowerBound([], 2)).toBe(0);
   });
 
-  test('returns max single item when larger than average', () => {
+  test("returns max single item when larger than average", () => {
     const tests: TestWithDuration[] = [
       {
-        testId: 'a::test1',
-        file: 'a.spec.ts',
+        testId: "a::test1",
+        file: "a.spec.ts",
         duration: 100,
         estimated: false,
       },
-      { testId: 'b::test1', file: 'b.spec.ts', duration: 10, estimated: false },
+      { testId: "b::test1", file: "b.spec.ts", duration: 10, estimated: false },
     ];
 
     // Total = 110, shards = 2, average = 55
@@ -161,11 +155,11 @@ describe('calculateLowerBound', () => {
     expect(calculateLowerBound(tests, 2)).toBe(100);
   });
 
-  test('returns ceiling of average when larger', () => {
+  test("returns ceiling of average when larger", () => {
     const tests: TestWithDuration[] = [
-      { testId: 'a::test1', file: 'a.spec.ts', duration: 50, estimated: false },
-      { testId: 'b::test1', file: 'b.spec.ts', duration: 50, estimated: false },
-      { testId: 'c::test1', file: 'c.spec.ts', duration: 50, estimated: false },
+      { testId: "a::test1", file: "a.spec.ts", duration: 50, estimated: false },
+      { testId: "b::test1", file: "b.spec.ts", duration: 50, estimated: false },
+      { testId: "c::test1", file: "c.spec.ts", duration: 50, estimated: false },
     ];
 
     // Total = 150, shards = 2, average = 75

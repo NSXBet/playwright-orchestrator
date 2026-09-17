@@ -1,13 +1,9 @@
-import { execSync } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { glob } from 'glob';
-import type {
-  DiscoveredTest,
-  PlaywrightListOutput,
-  PlaywrightListSuite,
-} from './types.js';
-import { buildTestId } from './types.js';
+import { execSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { glob } from "glob";
+import type { DiscoveredTest, PlaywrightListOutput, PlaywrightListSuite } from "./types.js";
+import { buildTestId } from "./types.js";
 
 /**
  * Result of loading a test list with config information
@@ -25,10 +21,7 @@ export interface TestListWithConfig {
  * @param projectName - Optional project name to find the correct testDir
  * @returns List of discovered tests
  */
-export function loadTestListFromFile(
-  filePath: string,
-  projectName?: string,
-): DiscoveredTest[] {
+export function loadTestListFromFile(filePath: string, projectName?: string): DiscoveredTest[] {
   return loadTestListWithConfig(filePath, projectName).tests;
 }
 
@@ -40,11 +33,8 @@ export function loadTestListFromFile(
  * @param projectName - Optional project name to find the correct testDir
  * @returns Tests and config paths (rootDir, testDir)
  */
-export function loadTestListWithConfig(
-  filePath: string,
-  projectName?: string,
-): TestListWithConfig {
-  const content = fs.readFileSync(filePath, 'utf-8');
+export function loadTestListWithConfig(filePath: string, projectName?: string): TestListWithConfig {
+  const content = fs.readFileSync(filePath, "utf-8");
   return parsePlaywrightListOutputWithConfig(content, projectName);
 }
 
@@ -61,9 +51,8 @@ export function discoverTests(
   project?: string,
   configDir?: string,
 ): DiscoveredTest[] {
-  const projectFlag = project ? `--project="${project}"` : '';
-  const cmd =
-    `npx playwright test --list --reporter=json ${projectFlag}`.trim();
+  const projectFlag = project ? `--project="${project}"` : "";
+  const cmd = `npx playwright test --list --reporter=json ${projectFlag}`.trim();
 
   // Run Playwright from the config directory (where playwright.config.ts is located)
   const cwd = configDir || testDir;
@@ -71,9 +60,9 @@ export function discoverTests(
   try {
     const output = execSync(cmd, {
       cwd,
-      encoding: 'utf-8',
+      encoding: "utf-8",
       maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large test suites
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ["pipe", "pipe", "pipe"],
     });
 
     return parsePlaywrightListOutput(output, project);
@@ -113,16 +102,14 @@ function parsePlaywrightListOutputWithConfig(
   projectName?: string,
 ): TestListWithConfig {
   const tests: DiscoveredTest[] = [];
-  let rootDir = '';
-  let testDir = '';
+  let rootDir = "";
+  let testDir = "";
   let parsed = false;
 
   const parseAndExtract = (data: PlaywrightListOutput) => {
     const baseDir = getProjectTestDir(data, projectName);
     if (!data.config?.rootDir) {
-      throw new Error(
-        '[Orchestrator] Missing config.rootDir in Playwright --list JSON output.',
-      );
+      throw new Error("[Orchestrator] Missing config.rootDir in Playwright --list JSON output.");
     }
     rootDir = data.config.rootDir;
     testDir = baseDir;
@@ -149,9 +136,7 @@ function parsePlaywrightListOutputWithConfig(
   }
 
   if (!parsed) {
-    throw new Error(
-      '[Orchestrator] Failed to parse Playwright --list JSON output.',
-    );
+    throw new Error("[Orchestrator] Failed to parse Playwright --list JSON output.");
   }
 
   return { tests, rootDir, testDir };
@@ -167,26 +152,21 @@ function parsePlaywrightListOutputWithConfig(
  * @returns The testDir to use for path resolution
  * @throws Error if testDir cannot be determined
  */
-function getProjectTestDir(
-  data: PlaywrightListOutput,
-  projectName?: string,
-): string {
+function getProjectTestDir(data: PlaywrightListOutput, projectName?: string): string {
   const projects = data.config?.projects;
 
   if (!projects || projects.length === 0) {
     throw new Error(
-      '[Orchestrator] No projects found in test-list.json. ' +
-        'Ensure your playwright.config.ts has at least one project configured.',
+      "[Orchestrator] No projects found in test-list.json. " +
+        "Ensure your playwright.config.ts has at least one project configured.",
     );
   }
 
   // Find the matching project
-  const project = projectName
-    ? projects.find((p) => p.name === projectName)
-    : projects[0]; // Use first project if no name specified
+  const project = projectName ? projects.find((p) => p.name === projectName) : projects[0]; // Use first project if no name specified
 
   if (!project) {
-    const availableProjects = projects.map((p) => p.name).join(', ');
+    const availableProjects = projects.map((p) => p.name).join(", ");
     throw new Error(
       `[Orchestrator] Project "${projectName}" not found in test-list.json. ` +
         `Available projects: ${availableProjects}`,
@@ -196,8 +176,8 @@ function getProjectTestDir(
   if (!project.testDir) {
     throw new Error(
       `[Orchestrator] Project "${project.name}" has no testDir configured. ` +
-        'Ensure your playwright.config.ts project has testDir set, or the config ' +
-        'has a root-level testDir.',
+        "Ensure your playwright.config.ts project has testDir set, or the config " +
+        "has a root-level testDir.",
     );
   }
 
@@ -223,7 +203,7 @@ function extractTestsFromSuite(
   // Root suites have the filename as title - skip it from titlePath
   // Nested suites (describe blocks) have meaningful titles to include
   const currentTitles =
-    !isRootSuite && suite.title && suite.title !== ''
+    !isRootSuite && suite.title && suite.title !== ""
       ? [...parentTitles, suite.title]
       : parentTitles;
 
@@ -264,11 +244,11 @@ function extractTestsFromSuite(
 function resolveFilePath(filePath: string, rootDir: string): string {
   // If it's already an absolute path, make it relative to rootDir
   if (path.isAbsolute(filePath)) {
-    return path.relative(rootDir, filePath).replace(/\\/g, '/');
+    return path.relative(rootDir, filePath).replace(/\\/g, "/");
   }
 
   // If it's a relative path already (relative to rootDir), just normalize it
-  return filePath.replace(/\\/g, '/');
+  return filePath.replace(/\\/g, "/");
 }
 
 /**
@@ -283,17 +263,15 @@ function resolveFilePath(filePath: string, rootDir: string): string {
  */
 export function discoverTestsFromFiles(
   testDir: string,
-  globPattern: string = '**/*.spec.ts',
+  globPattern: string = "**/*.spec.ts",
 ): DiscoveredTest[] {
   const tests: DiscoveredTest[] = [];
 
   const files = glob.sync(globPattern, { cwd: testDir, absolute: true });
 
   for (const filePath of files) {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const relativeFile = path
-      .relative(process.cwd(), filePath)
-      .replace(/\\/g, '/');
+    const content = fs.readFileSync(filePath, "utf-8");
+    const relativeFile = path.relative(process.cwd(), filePath).replace(/\\/g, "/");
     const fileTests = parseTestsFromSource(content, relativeFile);
     tests.push(...fileTests);
   }
@@ -311,10 +289,7 @@ export function discoverTestsFromFiles(
  * @param fileName - Name of the source file
  * @returns List of discovered tests
  */
-export function parseTestsFromSource(
-  source: string,
-  fileName: string,
-): DiscoveredTest[] {
+export function parseTestsFromSource(source: string, fileName: string): DiscoveredTest[] {
   const tests: DiscoveredTest[] = [];
 
   // Match describe blocks and test/it calls
@@ -334,10 +309,10 @@ export function parseTestsFromSource(
     let foundOpen = false;
 
     for (let i = start; i < source.length; i++) {
-      if (source[i] === '{') {
+      if (source[i] === "{") {
         braceCount++;
         foundOpen = true;
-      } else if (source[i] === '}') {
+      } else if (source[i] === "}") {
         braceCount--;
         if (foundOpen && braceCount === 0) {
           end = i;
@@ -346,12 +321,12 @@ export function parseTestsFromSource(
       }
     }
 
-    describes.push({ title: match[1] ?? '', start, end });
+    describes.push({ title: match[1] ?? "", start, end });
   }
 
   // Find all tests
   for (const match of source.matchAll(testRegex)) {
-    const testTitle = match[1] ?? '';
+    const testTitle = match[1] ?? "";
     const testPos = match.index ?? 0;
 
     // Find which describe blocks contain this test
@@ -364,9 +339,9 @@ export function parseTestsFromSource(
     titlePath.push(testTitle);
 
     // Calculate line number from position (1-based)
-    const line = source.substring(0, testPos).split('\n').length;
+    const line = source.substring(0, testPos).split("\n").length;
     // Calculate column (1-based, position within the line)
-    const lastNewline = source.lastIndexOf('\n', testPos - 1);
+    const lastNewline = source.lastIndexOf("\n", testPos - 1);
     const column = testPos - lastNewline;
 
     tests.push({
@@ -388,9 +363,7 @@ export function parseTestsFromSource(
  * @param tests - List of discovered tests
  * @returns Map of file name to tests
  */
-export function groupTestsByFile(
-  tests: DiscoveredTest[],
-): Map<string, DiscoveredTest[]> {
+export function groupTestsByFile(tests: DiscoveredTest[]): Map<string, DiscoveredTest[]> {
   const grouped = new Map<string, DiscoveredTest[]>();
 
   for (const test of tests) {

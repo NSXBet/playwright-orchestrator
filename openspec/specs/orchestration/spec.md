@@ -3,7 +3,9 @@
 ## Purpose
 
 Intelligent distribution of Playwright tests across CI shards using historical timing data. The orchestrator learns test durations from previous runs and uses the CKK algorithm to balance shards, minimizing total CI time.
+
 ## Requirements
+
 ### Requirement: Test Discovery
 
 The system SHALL discover all tests from a pre-generated Playwright JSON test list.
@@ -118,7 +120,7 @@ The system SHALL merge timing data using Exponential Moving Average (EMA).
 - **AND** new timing artifact with test X (duration: 130s)
 - **AND** alpha = 0.3
 - **WHEN** the `merge-timing` command is executed
-- **THEN** test X duration becomes 109s (0.3 * 130 + 0.7 * 100)
+- **THEN** test X duration becomes 109s (0.3 _ 130 + 0.7 _ 100)
 
 #### Scenario: Prune old entries
 
@@ -309,7 +311,7 @@ The system SHALL support a file affinity penalty that discourages splitting test
 
 ### Requirement: Test List Output Format
 
-The `assign` command SHALL include `testListFiles` in its JSON output, containing shard assignments in Playwright's `--test-list` format. File paths in the output SHALL be relative to `config.rootDir` (not `project.testDir`), matching Playwright's `--test-list` path resolution. Each line uses ` › ` (space-surrounded single right-pointing angle quotation mark, U+203A) as the delimiter between file path, describe blocks, and test title.
+The `assign` command SHALL include `testListFiles` in its JSON output, containing shard assignments in Playwright's `--test-list` format. File paths in the output SHALL be relative to `config.rootDir` (not `project.testDir`), matching Playwright's `--test-list` path resolution. Each line uses `›` (space-surrounded single right-pointing angle quotation mark, U+203A) as the delimiter between file path, describe blocks, and test title.
 
 #### Scenario: JSON output includes testListFiles
 
@@ -411,4 +413,3 @@ The system SHALL use Playwright's `--test-list` CLI flag for test filtering, rem
 - **THEN** no imports from `@nsxbet/playwright-orchestrator` are needed
 - **AND** only standard Playwright reporters are configured
 - **AND** no fixture wrappers are needed
-

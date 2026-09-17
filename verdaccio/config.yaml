@@ -16,18 +16,18 @@ uplinks:
     url: https://registry.npmjs.org/
 
 packages:
-  '@nsxbet/*':
+  "@nsxbet/*":
     # Allow everyone to access and publish
     access: $all
     publish: $all
     unpublish: $all
 
-  '@*/*':
+  "@*/*":
     access: $all
     publish: $authenticated
     proxy: npmjs
 
-  '**':
+  "**":
     access: $all
     publish: $authenticated
     proxy: npmjs

@@ -1,8 +1,4 @@
-import type {
-  AssignResult,
-  FileWithDuration,
-  ShardAssignment,
-} from './types.js';
+import type { AssignResult, FileWithDuration, ShardAssignment } from "./types.js";
 
 /**
  * Longest Processing Time First (LPT) algorithm for load balancing
@@ -18,19 +14,13 @@ import type {
  * @param numShards - Number of shards to distribute across
  * @returns Shard assignments with expected durations
  */
-export function assignWithLPT(
-  files: FileWithDuration[],
-  numShards: number,
-): ShardAssignment[] {
+export function assignWithLPT(files: FileWithDuration[], numShards: number): ShardAssignment[] {
   // Initialize shards
-  const shards: ShardAssignment[] = Array.from(
-    { length: numShards },
-    (_, i) => ({
-      shardIndex: i + 1, // 1-based index
-      files: [],
-      expectedDuration: 0,
-    }),
-  );
+  const shards: ShardAssignment[] = Array.from({ length: numShards }, (_, i) => ({
+    shardIndex: i + 1, // 1-based index
+    files: [],
+    expectedDuration: 0,
+  }));
 
   if (files.length === 0) {
     return shards;
@@ -91,9 +81,7 @@ export function formatAssignResult(
  * The target is to keep this below 1.2 (20% difference)
  */
 export function calculateBalanceRatio(assignments: ShardAssignment[]): number {
-  const durations = assignments
-    .map((a) => a.expectedDuration)
-    .filter((d) => d > 0);
+  const durations = assignments.map((a) => a.expectedDuration).filter((d) => d > 0);
 
   if (durations.length === 0) {
     return 1.0;

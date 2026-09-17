@@ -1,4 +1,4 @@
-import type { TestShardAssignment, TestWithDuration } from './types.js';
+import type { TestShardAssignment, TestWithDuration } from "./types.js";
 
 /**
  * Default timeout for CKK algorithm in milliseconds
@@ -47,7 +47,7 @@ export function assignWithCKK(
   }
 
   if (numShards <= 0) {
-    throw new Error('Number of shards must be positive');
+    throw new Error("Number of shards must be positive");
   }
 
   if (numShards >= tests.length) {
@@ -90,10 +90,7 @@ export function assignWithCKK(
   const effectiveLoads = Array.from({ length: numShards }, () => 0);
   const actualLoads = Array.from({ length: numShards }, () => 0);
   const shardTests: string[][] = Array.from({ length: numShards }, () => []);
-  const shardFiles: Set<string>[] = Array.from(
-    { length: numShards },
-    () => new Set<string>(),
-  );
+  const shardFiles: Set<string>[] = Array.from({ length: numShards }, () => new Set<string>());
 
   function computePenalty(shardIdx: number, file: string): number {
     if (fileAffinityPenalty <= 0 || shardFiles[shardIdx]?.has(file)) return 0;
@@ -155,9 +152,7 @@ export function assignWithCKK(
 
     const currentMax = Math.max(...effectiveLoads);
     const totalAfter =
-      effectiveLoads.reduce((sum, l) => sum + l, 0) +
-      remainingDuration +
-      minPenaltyCost;
+      effectiveLoads.reduce((sum, l) => sum + l, 0) + remainingDuration + minPenaltyCost;
     const lowerBound = Math.max(currentMax, Math.ceil(totalAfter / numShards));
 
     // Prune if lower bound exceeds best
@@ -181,8 +176,7 @@ export function assignWithCKK(
       if (load === undefined) continue;
 
       const hasFile = shardFiles[shardIdx]?.has(test.file) ?? false;
-      const dedupKey =
-        fileAffinityPenalty > 0 ? `${load}:${hasFile}` : `${load}`;
+      const dedupKey = fileAffinityPenalty > 0 ? `${load}:${hasFile}` : `${load}`;
 
       if (seenStates.has(dedupKey)) {
         continue;
@@ -234,9 +228,7 @@ export function assignWithCKK(
 
   // Return actual makespan (without penalties) for user-facing output
   const actualMakespan =
-    bestAssignment.length > 0
-      ? Math.max(...bestAssignment.map((a) => a.expectedDuration))
-      : 0;
+    bestAssignment.length > 0 ? Math.max(...bestAssignment.map((a) => a.expectedDuration)) : 0;
 
   return {
     assignments: bestAssignment,
@@ -259,22 +251,16 @@ function assignWithLPTInternal(
   fileTestCounts: Map<string, number> = new Map(),
   fileRemaining: Map<string, number> = new Map(),
 ): { assignments: TestShardAssignment[]; makespan: number } {
-  const shards: TestShardAssignment[] = Array.from(
-    { length: numShards },
-    (_, i) => ({
-      shardIndex: i + 1,
-      tests: [],
-      expectedDuration: 0,
-    }),
-  );
+  const shards: TestShardAssignment[] = Array.from({ length: numShards }, (_, i) => ({
+    shardIndex: i + 1,
+    tests: [],
+    expectedDuration: 0,
+  }));
 
   // Track effective loads (with penalty) separately from actual durations
   const effectiveLoads = Array.from({ length: numShards }, () => 0);
   const actualLoads = Array.from({ length: numShards }, () => 0);
-  const shardFiles: Set<string>[] = Array.from(
-    { length: numShards },
-    () => new Set<string>(),
-  );
+  const shardFiles: Set<string>[] = Array.from({ length: numShards }, () => new Set<string>());
 
   for (const test of sortedTests) {
     // Find shard with minimum effective load after assignment (including penalty)
@@ -305,8 +291,7 @@ function assignWithLPTInternal(
     const shard = shards[minIdx];
     if (shard) {
       shard.tests.push(test.testId);
-      effectiveLoads[minIdx] =
-        (effectiveLoads[minIdx] ?? 0) + test.duration + penalty;
+      effectiveLoads[minIdx] = (effectiveLoads[minIdx] ?? 0) + test.duration + penalty;
       actualLoads[minIdx] = (actualLoads[minIdx] ?? 0) + test.duration;
       shard.expectedDuration = actualLoads[minIdx] ?? 0;
       shardFiles[minIdx]?.add(test.file);
@@ -334,10 +319,7 @@ function createEmptyAssignments(numShards: number): TestShardAssignment[] {
 /**
  * Assign one test per shard when there are more shards than tests
  */
-function assignOnePerShard(
-  tests: TestWithDuration[],
-  numShards: number,
-): CKKResult {
+function assignOnePerShard(tests: TestWithDuration[], numShards: number): CKKResult {
   const assignments = createEmptyAssignments(numShards);
 
   tests.forEach((test, i) => {
@@ -348,8 +330,7 @@ function assignOnePerShard(
     }
   });
 
-  const makespan =
-    tests.length > 0 ? Math.max(...tests.map((t) => t.duration)) : 0;
+  const makespan = tests.length > 0 ? Math.max(...tests.map((t) => t.duration)) : 0;
 
   return {
     assignments,
@@ -362,10 +343,7 @@ function assignOnePerShard(
  * Calculate theoretical lower bound for makespan
  * This is the best possible makespan if we could partition perfectly
  */
-export function calculateLowerBound(
-  tests: TestWithDuration[],
-  numShards: number,
-): number {
+export function calculateLowerBound(tests: TestWithDuration[], numShards: number): number {
   if (tests.length === 0) return 0;
 
   const totalDuration = tests.reduce((sum, t) => sum + t.duration, 0);

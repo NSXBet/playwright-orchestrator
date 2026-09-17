@@ -1,12 +1,12 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test.describe('Login Page', () => {
-  test('should show login form', async () => {
+test.describe("Login Page", () => {
+  test("should show login form", async () => {
     // Simple test that always passes
     expect(true).toBe(true);
   });
 
-  test('should validate email format', async () => {
+  test("should validate email format", async () => {
     expect(true).toBe(true);
   });
 });

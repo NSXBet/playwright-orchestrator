@@ -7,7 +7,7 @@
  * @module @nsxbet/playwright-orchestrator/core/test-id
  */
 
-const TEST_LIST_SEPARATOR = ' › ';
+const TEST_LIST_SEPARATOR = " › ";
 
 /**
  * Minimal test entry for test-list format conversion.
@@ -31,17 +31,10 @@ export interface TestListEntry {
  * @param testDirPrefix - Relative path from rootDir to testDir (e.g. `src/test/e2e`)
  * @returns Test-list formatted string (e.g. `src/test/e2e/login.spec.ts › Login › should login`)
  */
-export function toTestListFormat(
-  entry: TestListEntry,
-  testDirPrefix?: string,
-): string {
-  const cleanPrefix = (testDirPrefix ?? '')
-    .replace(/\\/g, '/')
-    .replace(/\/+$/, '');
-  const normalizedFile = entry.file.replace(/\\/g, '/');
-  const fullPath = cleanPrefix
-    ? `${cleanPrefix}/${normalizedFile}`
-    : normalizedFile;
+export function toTestListFormat(entry: TestListEntry, testDirPrefix?: string): string {
+  const cleanPrefix = (testDirPrefix ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedFile = entry.file.replace(/\\/g, "/");
+  const fullPath = cleanPrefix ? `${cleanPrefix}/${normalizedFile}` : normalizedFile;
 
   return [fullPath, ...entry.titlePath].join(TEST_LIST_SEPARATOR);
 }
@@ -56,10 +49,7 @@ export function toTestListFormat(
  * @param testDirPrefix - Relative path from rootDir to testDir
  * @returns Ready-to-write test-list file content
  */
-export function toTestListFile(
-  entries: TestListEntry[],
-  testDirPrefix?: string,
-): string {
-  if (entries.length === 0) return '';
-  return `${entries.map((e) => toTestListFormat(e, testDirPrefix)).join('\n')}\n`;
+export function toTestListFile(entries: TestListEntry[], testDirPrefix?: string): string {
+  if (entries.length === 0) return "";
+  return `${entries.map((e) => toTestListFormat(e, testDirPrefix)).join("\n")}\n`;
 }

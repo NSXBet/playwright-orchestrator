@@ -1,10 +1,6 @@
-import * as fs from 'node:fs';
-import type {
-  ShardTimingArtifact,
-  TestTimingData,
-  TimingData,
-} from './types.js';
-import { createEmptyTimingData, TIMING_DATA_VERSION } from './types.js';
+import * as fs from "node:fs";
+import type { ShardTimingArtifact, TestTimingData, TimingData } from "./types.js";
+import { createEmptyTimingData, TIMING_DATA_VERSION } from "./types.js";
 
 /**
  * Default EMA smoothing factor (alpha)
@@ -25,7 +21,7 @@ export const DEFAULT_PRUNE_DAYS = 30;
  */
 export function loadTimingData(filePath: string): TimingData {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = fs.readFileSync(filePath, "utf-8");
     const data = JSON.parse(content) as {
       version: number;
       [key: string]: unknown;
@@ -52,7 +48,7 @@ export function loadTimingData(filePath: string): TimingData {
  */
 export function saveTimingData(filePath: string, data: TimingData): void {
   const content = JSON.stringify(data, null, 2);
-  fs.writeFileSync(filePath, content, 'utf-8');
+  fs.writeFileSync(filePath, content, "utf-8");
 }
 
 /**
@@ -125,8 +121,8 @@ export function mergeTimingData(
  * Extract file name from test ID
  */
 function extractFileFromTestId(testId: string): string {
-  const parts = testId.split('::');
-  return parts[0] ?? '';
+  const parts = testId.split("::");
+  return parts[0] ?? "";
 }
 
 /**
@@ -182,10 +178,7 @@ export function pruneTimingData(
  * @param testId - Test ID
  * @returns Duration in ms, or undefined if not found
  */
-export function getTestDuration(
-  data: TimingData,
-  testId: string,
-): number | undefined {
+export function getTestDuration(data: TimingData, testId: string): number | undefined {
   return data.tests[testId]?.duration;
 }
 
@@ -196,13 +189,8 @@ export function getTestDuration(
  * @param file - File path
  * @returns Total duration in ms, or undefined if no tests found
  */
-export function getFileDuration(
-  data: TimingData,
-  file: string,
-): number | undefined {
-  const fileTests = Object.entries(data.tests).filter(
-    ([, t]) => t.file === file,
-  );
+export function getFileDuration(data: TimingData, file: string): number | undefined {
+  const fileTests = Object.entries(data.tests).filter(([, t]) => t.file === file);
   if (fileTests.length === 0) {
     return undefined;
   }

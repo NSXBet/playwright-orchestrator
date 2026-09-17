@@ -32,14 +32,14 @@ When `testDir` differs from `rootDir` (common in monorepos), the orchestrator co
 
 ## Edge Cases
 
-| File | Tests |
-|------|-------|
-| `parameterized.spec.ts` | `test.each` with arrays, objects, template literals |
-| `nested.spec.ts` | 4+ levels deep, same names in different contexts |
-| `special-chars.spec.ts` | Unicode (Japanese, Cyrillic), brackets, emojis |
-| `separator-conflict.spec.ts` | `::` in test/describe titles |
-| `skip-patterns.spec.ts` | `skip`, `fixme`, `slow`, `@smoke`, `[P0]` tags |
-| `features/deep/path.spec.ts` | Tests in deep subdirectories |
+| File                         | Tests                                               |
+| ---------------------------- | --------------------------------------------------- |
+| `parameterized.spec.ts`      | `test.each` with arrays, objects, template literals |
+| `nested.spec.ts`             | 4+ levels deep, same names in different contexts    |
+| `special-chars.spec.ts`      | Unicode (Japanese, Cyrillic), brackets, emojis      |
+| `separator-conflict.spec.ts` | `::` in test/describe titles                        |
+| `skip-patterns.spec.ts`      | `skip`, `fixme`, `slow`, `@smoke`, `[P0]` tags      |
+| `features/deep/path.spec.ts` | Tests in deep subdirectories                        |
 
 ## Running Tests
 

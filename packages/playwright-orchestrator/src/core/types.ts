@@ -218,7 +218,7 @@ export function createEmptyTimingData(): TimingData {
  * Format: file::describe1::describe2::testTitle
  */
 export function buildTestId(file: string, titlePath: string[]): string {
-  return [file, ...titlePath].join('::');
+  return [file, ...titlePath].join("::");
 }
 
 /**
@@ -228,9 +228,9 @@ export function parseTestId(testId: string): {
   file: string;
   titlePath: string[];
 } {
-  const parts = testId.split('::');
+  const parts = testId.split("::");
   return {
-    file: parts[0] ?? '',
+    file: parts[0] ?? "",
     titlePath: parts.slice(1),
   };
 }

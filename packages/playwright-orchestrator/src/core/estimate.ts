@@ -1,7 +1,7 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import type { DiscoveredTest, TimingData } from './types.js';
-import { parseTestId } from './types.js';
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { DiscoveredTest, TimingData } from "./types.js";
+import { parseTestId } from "./types.js";
 
 /**
  * Default file affinity penalty when no timing data exists (30 seconds)
@@ -23,8 +23,8 @@ export const DEFAULT_TEST_DURATION = 30000;
  */
 export function countLines(filePath: string): number {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return content.split('\n').length;
+    const content = fs.readFileSync(filePath, "utf-8");
+    return content.split("\n").length;
   } catch {
     // If file can't be read, return a reasonable default
     return 50;
@@ -79,10 +79,7 @@ export function estimateDurations(
  * @param timingData - Existing timing data
  * @returns Estimated duration in milliseconds
  */
-export function estimateTestDuration(
-  testId: string,
-  timingData: TimingData | null,
-): number {
+export function estimateTestDuration(testId: string, timingData: TimingData | null): number {
   if (!timingData || Object.keys(timingData.tests).length === 0) {
     return DEFAULT_TEST_DURATION;
   }
@@ -90,9 +87,7 @@ export function estimateTestDuration(
   const { file } = parseTestId(testId);
 
   // Strategy 1: Same-file average
-  const sameFileTests = Object.entries(timingData.tests).filter(
-    ([, data]) => data.file === file,
-  );
+  const sameFileTests = Object.entries(timingData.tests).filter(([, data]) => data.file === file);
 
   if (sameFileTests.length > 0) {
     const sum = sameFileTests.reduce((acc, [, data]) => acc + data.duration, 0);
@@ -155,9 +150,7 @@ export function getTestDurations(
  * @param timingData - Timing data
  * @returns Average duration in milliseconds, or DEFAULT_TEST_DURATION if no data
  */
-export function calculateAverageTestDuration(
-  timingData: TimingData | null,
-): number {
+export function calculateAverageTestDuration(timingData: TimingData | null): number {
   if (!timingData || Object.keys(timingData.tests).length === 0) {
     return DEFAULT_TEST_DURATION;
   }
@@ -173,9 +166,7 @@ export function calculateAverageTestDuration(
  * Computes the P25 (25th percentile) of per-file average durations.
  * Falls back to DEFAULT_FILE_AFFINITY_PENALTY when no timing data exists.
  */
-export function calculateFileAffinityPenalty(
-  timingData: TimingData | null,
-): number {
+export function calculateFileAffinityPenalty(timingData: TimingData | null): number {
   if (!timingData || Object.keys(timingData.tests).length === 0) {
     return DEFAULT_FILE_AFFINITY_PENALTY;
   }
@@ -228,9 +219,7 @@ export function calculateFileAverageTestDuration(
     return null;
   }
 
-  const fileTests = Object.values(timingData.tests).filter(
-    (t) => t.file === file,
-  );
+  const fileTests = Object.values(timingData.tests).filter((t) => t.file === file);
 
   if (fileTests.length === 0) {
     return null;
