@@ -40,12 +40,13 @@ runs:
         SHARD_INDEX='${{ inputs.shard-index }}'
         TOTAL='${{ inputs.shards }}'
 
-        # Always output fallback args
-        echo "fallback-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
+        # Native fallback is only safe when the orchestrator was unavailable.
+        echo "fallback-args=" >> $GITHUB_OUTPUT
 
         # Check if we have valid test-list files
         if [ -z "$TEST_LIST_FILES" ] || [ "$TEST_LIST_FILES" = "{}" ] || [ "$TEST_LIST_FILES" = "null" ]; then
           echo "::notice::No orchestrator data, using native sharding for shard $SHARD_INDEX/$TOTAL"
+          echo "fallback-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
           echo "has-tests=false" >> $GITHUB_OUTPUT
           echo "test-count=0" >> $GITHUB_OUTPUT
           echo "test-list-file=" >> $GITHUB_OUTPUT
@@ -56,7 +57,10 @@ runs:
         CONTENT=$(printf '%s' "$TEST_LIST_FILES" | jq -r --arg idx "$SHARD_INDEX" '.[$idx] // ""')
 
         if [ -z "$CONTENT" ]; then
-          echo "::notice::No tests assigned to shard $SHARD_INDEX, using native sharding"
+          # A valid non-empty assignment map with no entry for this shard is an
+          # intentional sparse plan. Do not use native sharding: it could run
+          # tests outside the explicit orchestrator assignment.
+          echo "::notice::Shard $SHARD_INDEX has a valid empty assignment; skipping test execution"
           echo "has-tests=false" >> $GITHUB_OUTPUT
           echo "test-count=0" >> $GITHUB_OUTPUT
           echo "test-list-file=" >> $GITHUB_OUTPUT

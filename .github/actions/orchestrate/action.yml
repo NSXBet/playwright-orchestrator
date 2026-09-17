@@ -28,6 +28,9 @@ outputs:
   use-orchestrator:
     description: Whether orchestration succeeded (use with get-shard action)
     value: ${{ steps.assign.outputs.use-orchestrator }}
+  assignment:
+    description: Complete assignment result JSON for exact lifecycle validation
+    value: ${{ steps.assign.outputs.assignment }}
 
 runs:
   using: composite
@@ -86,6 +89,7 @@ runs:
           echo "expected-durations={}" >> $GITHUB_OUTPUT
           echo "total-tests=0" >> $GITHUB_OUTPUT
           echo "is-optimal=false" >> $GITHUB_OUTPUT
+          echo "assignment={}" >> $GITHUB_OUTPUT
           exit 0
         fi
 
@@ -98,6 +102,7 @@ runs:
         echo "expected-durations=$(echo "$RESULT" | jq -c '.expectedDurations')" >> $GITHUB_OUTPUT
         echo "total-tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
         echo "is-optimal=$IS_OPTIMAL" >> $GITHUB_OUTPUT
+        echo "assignment=$(echo "$RESULT" | jq -c '.')" >> $GITHUB_OUTPUT
 
         # Log summary
         echo "### Orchestrator Assignment" >> $GITHUB_STEP_SUMMARY
