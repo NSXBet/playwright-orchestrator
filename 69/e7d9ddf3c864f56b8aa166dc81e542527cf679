@@ -1,0 +1,43 @@
+packages/jest-orchestrator/README.md
+  s_5809024f6f3f29::t_9bdf469629bd3c 156-158
+openspec/changes/add-jest-orchestrator/proposal.md
+  s_5809024f6f3f29::t_7b0eed022dbd6b 8,10
+openspec/changes/add-jest-orchestrator/design.md
+  s_5809024f6f3f29::t_2b0dc5822390e3 29
+README.md
+  s_5809024f6f3f29::t_4836409df79fc9 47
+openspec/changes/add-jest-orchestrator/tasks.md
+  s_5809024f6f3f29::t_7c997b50dfe9c0 9,17
+  s_5809024f6f3f29::t_4e862fb0ddcb0e 21-22
+examples/jest-external-workflow.yml
+  s_5809024f6f3f29::t_0b293af4a5a051 1-138
+.github/actions/setup-jest-orchestrator/action.yml
+  s_5809024f6f3f29::t_a123e3b19f86d2 1-57
+docs/jest-external-integration.md
+  s_5809024f6f3f29::t_79747f352348dc 1-18,25-201,203,206-237,239-293
+  s_5809024f6f3f29::t_de20033d02b606 19-24,202,204-205,238
+openspec/changes/add-jest-orchestrator/specs/jest-orchestration/spec.md
+  s_5809024f6f3f29::t_8b3d34227bf4d2 43,51-56,62
+docs/README.md
+  s_5809024f6f3f29::t_a468582fb5c384 1,3,15,19,23-30
+  s_5809024f6f3f29::t_5b2750aacb5deb 31
+.github/workflows/e2e-jest-monorepo.yml
+  s_5809024f6f3f29::t_a2aeec604c86c8 175-176,250-278
+  s_5809024f6f3f29::t_1a2b6f23832e63 279
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "69e7d9ddf3c864f56b8aa166dc81e542527cf679",
+  "prompts": {},
+  "sessions": {
+    "s_5809024f6f3f29": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0acb2-9c09-75a1-a7a9-28eb8ed0294e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
