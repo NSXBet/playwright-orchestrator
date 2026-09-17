@@ -131,7 +131,7 @@ jobs:
         id: sparse
         uses: ./.github/actions/get-shard
         with:
-          test-list-files: '{"1":"src/test/e2e/example.spec.ts › Example › selected test"}'
+          test-list-files: '{"1":"src/test/e2e/example.spec.ts › Example › selected test", "5":""}'
           shard-index: 5
           shards: 5
 

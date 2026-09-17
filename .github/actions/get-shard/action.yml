@@ -53,14 +53,22 @@ runs:
           exit 0
         fi
 
-        # Extract test-list content for this shard (raw string, not JSON array)
+        # An explicit empty value is a valid sparse assignment. A missing key
+        # means the plan is incomplete, so retain the native fallback rather
+        # than silently omitting tests.
+        HAS_SHARD=$(printf '%s' "$TEST_LIST_FILES" | jq -r --arg idx "$SHARD_INDEX" 'has($idx)')
         CONTENT=$(printf '%s' "$TEST_LIST_FILES" | jq -r --arg idx "$SHARD_INDEX" '.[$idx] // ""')
 
         if [ -z "$CONTENT" ]; then
-          # A valid non-empty assignment map with no entry for this shard is an
-          # intentional sparse plan. Do not use native sharding: it could run
-          # tests outside the explicit orchestrator assignment.
-          echo "::notice::Shard $SHARD_INDEX has a valid empty assignment; skipping test execution"
+          if [ "$HAS_SHARD" = "true" ]; then
+            echo "::notice::Shard $SHARD_INDEX has a valid empty assignment; skipping test execution"
+            echo "has-tests=false" >> $GITHUB_OUTPUT
+            echo "test-count=0" >> $GITHUB_OUTPUT
+            echo "test-list-file=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "::notice::Shard $SHARD_INDEX is missing from the assignment, using native sharding"
+          echo "fallback-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
           echo "has-tests=false" >> $GITHUB_OUTPUT
           echo "test-count=0" >> $GITHUB_OUTPUT
           echo "test-list-file=" >> $GITHUB_OUTPUT

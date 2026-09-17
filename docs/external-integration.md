@@ -480,10 +480,12 @@ Writes a test-list file for a specific shard.
 - `test-count`: Number of tests in this shard
 - `fallback-args`: Native Playwright shard argument (`--shard=N/M`) when no orchestrator plan is available
 
-A valid sparse assignment is different from an unavailable plan: if a shard has
-no assigned tests, `get-shard` returns `has-tests=false` with an empty
-`fallback-args`. Treat that shard as a successful no-op; do not run native
-Playwright sharding, which could execute tests outside the assignment.
+A valid sparse assignment is different from an unavailable plan: if the shard
+is present in `test-list-files` with an empty value, `get-shard` returns
+`has-tests=false` with an empty `fallback-args`. Treat that shard as a
+successful no-op; do not run native Playwright sharding, which could execute
+tests outside the assignment. A missing shard key instead retains the native
+fallback, making a truncated assignment visible.
 
 ### extract-timing
 
