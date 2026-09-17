@@ -17,9 +17,12 @@ Instructions for AI coding assistants working on this project.
 
 ## Before Starting
 
-1. Read `openspec/project.md` for conventions
-2. Check `openspec/changes/` for active proposals
-3. Run `make lint && make typecheck` to verify setup
+1. For OpenSpec work, read the matching workflow in `.agents/skills/`:
+   - `openspec-propose` for a new capability, architecture, or behavior-changing change;
+   - `openspec-apply-change` to implement an approved change;
+   - `openspec-archive-change` to archive a completed, deployed change.
+2. Read `openspec/project.md` for conventions and check `openspec/changes/` for active proposals.
+3. Run `make lint && make typecheck` to verify setup.
 
 ## Code Style
 

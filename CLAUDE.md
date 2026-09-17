@@ -4,17 +4,13 @@
 
 These instructions are for AI assistants working in this project.
 
-Always open `@/openspec/AGENTS.md` when the request:
+Use the relevant OpenSpec skill for proposal, implementation, or archival work:
 
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
+- `.agents/skills/openspec-propose/SKILL.md` — propose a capability or architecture change.
+- `.agents/skills/openspec-apply-change/SKILL.md` — implement an approved change.
+- `.agents/skills/openspec-archive-change/SKILL.md` — archive a completed, deployed change.
 
-Use `@/openspec/AGENTS.md` to learn:
-
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
+Read `@/openspec/AGENTS.md` for the repository's OpenSpec conventions.
 
 Keep this managed block so 'openspec update' can refresh the instructions.
 
