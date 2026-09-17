@@ -1,0 +1,57 @@
+.npmrc
+  s_5809024f6f3f29::t_173ddf182cf736 1-2
+.oxlintrc.json
+  s_5809024f6f3f29::t_face1f8b0f81cc 1-6
+.gitignore
+  s_5809024f6f3f29::t_4d7db38fb8eeca 11-14
+openspec/changes/refactor-package-monorepo/design.md
+  s_5809024f6f3f29::t_ce424e103d5639 1,3-7,9-14,16-22,24-28,30-34,36-40,42-46,48-52,54-59,61-67,69
+  s_5809024f6f3f29::t_0b1bb2e1b33059 2,8,15,23,29,35,41,47,53,60,68
+mise.toml
+  s_5809024f6f3f29::t_ec7f5eecd44ab5 1-2
+openspec/changes/refactor-package-monorepo/proposal.md
+  s_5809024f6f3f29::t_ce424e103d5639 1-3,5-7,9-16,18-20
+  s_5809024f6f3f29::t_0b1bb2e1b33059 4,8,17
+packages/playwright-orchestrator/package.json
+  s_5809024f6f3f29::t_6489603ca94f2a 2,14-18,20-23,27-31,33-34,52-53,62-63,65
+  s_5809024f6f3f29::t_0b1bb2e1b33059 6-13,19,24-26,55-57,72-76
+  s_5809024f6f3f29::t_74e4cd9f8f84de 68-70
+openspec/changes/refactor-package-monorepo/specs/repository-workspace/spec.md
+  s_5809024f6f3f29::t_0b1bb2e1b33059 2,4,8,14,21,25,31,35,41,45
+  s_5809024f6f3f29::t_ce424e103d5639 1,3,5-7,9-13,15-20,22-24,26-30,32-34,36-40,42-44,46-48
+openspec/changes/refactor-package-monorepo/tasks.md
+  s_5809024f6f3f29::t_ce424e103d5639 1,6-7,12-13,15-19,21-23
+  s_5809024f6f3f29::t_2e0e5c5504fa24 3-5,9-11
+  s_5809024f6f3f29::t_0b1bb2e1b33059 2,8,14,20
+.prettierignore
+  s_5809024f6f3f29::t_55671e2010982b 1-5
+package.json
+  s_5809024f6f3f29::t_4de479a2e93ce6 11-12,18-19,25-28,32-34
+  s_5809024f6f3f29::t_109e0e58b5d5fd 35
+Makefile
+  s_5809024f6f3f29::t_ad0d80e4722135 1,3-8,10,12,14-19,22,25,28-31,34,37,40-44,46-51,54,59-102
+lefthook.yml
+  s_5809024f6f3f29::t_291199746f7740 1-5
+README.md
+  s_5809024f6f3f29::t_0b1bb2e1b33059 7-8
+.editorconfig
+  s_5809024f6f3f29::t_08135ac0030a6c 1-12
+bun.lock
+  s_5809024f6f3f29::t_2d612e3d05f278 11-14,90-143,176-177,180-181,186-189,208-209,214-215,234-235,282-303,306-309,314-315,322-323,332-333,336-337,340-343,368-370,384-385,388-389,404-405,410-411,424-425,464-465,474-477,482-490,494-501,504-519,522-523,525-530
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d2ccbaa2ccdffc06e3e2bd00f456850c681f4d4b",
+  "prompts": {},
+  "sessions": {
+    "s_5809024f6f3f29": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0acb2-9c09-75a1-a7a9-28eb8ed0294e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
