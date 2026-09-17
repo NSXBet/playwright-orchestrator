@@ -4,6 +4,7 @@ import {
   type AssignResult,
   assignShards,
   createColdStartTests,
+  formatDuration,
   loadTimingDataFile,
   type TestWithDuration,
 } from "../core/index.js";
@@ -77,7 +78,7 @@ export default class Assign extends Command {
     if (flags.format === "text") {
       for (const shard of result.shards) {
         this.log(
-          `shard ${shard.shard}: ${shard.files.length} files, ${shard.testIds.length} tests, expected ${formatMs(shard.expectedDuration)}`,
+          `shard ${shard.shard}: ${shard.files.length} files, ${shard.testIds.length} tests, expected ${formatDuration(shard.expectedDuration)}`,
         );
         for (const f of shard.files) this.log(`  ${f}`);
       }
@@ -91,8 +92,4 @@ export default class Assign extends Command {
       );
     }
   }
-}
-
-function formatMs(ms: number): string {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }

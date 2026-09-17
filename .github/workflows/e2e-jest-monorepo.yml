@@ -74,7 +74,7 @@ jobs:
           MATRIX=$(seq 1 "$SHARDS" | jq -R . | jq -sc '{shard: .}')
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
-      - name: Orchestrate tests
+      - name: Create cold-start assignment
         id: orchestrate
         uses: ./.github/actions/jest-orchestrate
         with:
@@ -83,9 +83,10 @@ jobs:
           shards: ${{ github.event.inputs.shards || '2' }}
           level: ${{ github.event.inputs.level || 'file' }}
 
-      - name: Validate cold-start assignment
+      - name: Validate cold-start assignment plan
         run: |
           set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/format-duration.sh"
           ASSIGNMENT=.orchestration/assignment.json
           MANIFEST=.orchestration/manifest.json
           DISCOVERED=$(jq '.tests | length' "$MANIFEST")
@@ -98,16 +99,16 @@ jobs:
             exit 1
           }
           [ "$PLANNED_DURATION" -eq "$EXPECTED_DURATION" ] || {
-            echo "::error::cold-start plan is $PLANNED_DURATION ms; expected $EXPECTED_DURATION ms"
+            echo "::error::cold-start plan is $(format_duration "$PLANNED_DURATION"); expected $(format_duration "$EXPECTED_DURATION")"
             exit 1
           }
           jq -e '.shards | all(.expectedDuration > 0)' "$ASSIGNMENT" > /dev/null || {
             echo "::error::a cold-start shard has a zero expected duration"
             exit 1
           }
-          echo "✓ Cold-start plan: $ASSIGNED/$DISCOVERED tests, $PLANNED_DURATION ms estimated"
+          echo "✓ Cold-start assignment plan: $ASSIGNED/$DISCOVERED tests, $(format_duration "$PLANNED_DURATION") estimated"
 
-      - name: Upload assignment artifact
+      - name: Publish cold-start inputs
         uses: actions/upload-artifact@v4
         with:
           name: jest-orchestration-assignment
@@ -145,14 +146,14 @@ jobs:
           name: jest-orchestration-assignment
           path: .orchestration
 
-      - name: Get shard assignment
+      - name: Load cold shard assignment
         id: shard
         uses: ./.github/actions/jest-get-shard
         with:
           assignment-file: .orchestration/assignment.json
           shard-index: ${{ matrix.shard }}
 
-      - name: Run Jest tests for this shard
+      - name: Execute cold Jest shard
         id: run
         working-directory: examples/monorepo/apps/web
         run: |
@@ -171,7 +172,7 @@ jobs:
           fi
           echo "Jest completed with exit $EXIT_CODE; intentional test failures are expected in this fixture."
 
-      - name: Annotate failures
+      - name: Annotate cold Jest results
         if: success() || failure()
         working-directory: examples/monorepo/apps/web
         run: |
@@ -185,7 +186,7 @@ jobs:
             }
           fi
 
-      - name: Upload timing artifact
+      - name: Publish cold timing artifact
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
@@ -193,7 +194,7 @@ jobs:
           path: examples/monorepo/apps/web/shard-timing-${{ matrix.shard }}.json
           if-no-files-found: error
 
-      - name: Upload JSON report
+      - name: Publish cold Jest report
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
@@ -220,7 +221,7 @@ jobs:
           merge-multiple: true
           path: reports
 
-      - name: Validate exact cross-shard coverage
+      - name: Validate cold report coverage
         run: |
           node --input-type=module <<'EOF'
           import { readFileSync, readdirSync } from "node:fs";
@@ -306,16 +307,17 @@ jobs:
           merge-multiple: true
           path: timing-artifacts
 
-      - name: Merge timing data
+      - name: Merge cold timing measurements
         uses: ./.github/actions/jest-merge-timing
         with:
           new-files: timing-artifacts/shard-timing-*.json
           output-file: jest-monorepo-timing.json
           manifest: .orchestration/manifest.json
 
-      - name: Validate timing round trip
+      - name: Validate warm timing hand-off
         run: |
           set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/format-duration.sh"
           ENTRIES=$(jq '[.projects[].files[]] | length' jest-monorepo-timing.json)
           [ "$ENTRIES" -gt 0 ] || { echo "::error::no timing data was merged"; exit 1; }
           jest-orchestrator assign \
@@ -328,16 +330,16 @@ jobs:
           WARM_DURATION=$(jq '[.shards[].expectedDuration] | add' roundtrip-assignment.json)
           [ "$TOTAL" -eq 50 ] || { echo "::error::warm-start plan has $TOTAL tests; expected 50"; exit 1; }
           [ "$WARM_DURATION" -gt 0 ] || { echo "::error::warm-start plan has zero expected duration"; exit 1; }
-          echo "✓ Timing round trip validated: $ENTRIES timing entries for $TOTAL discovered tests, $WARM_DURATION ms estimated"
+          echo "✓ Warm timing hand-off: $ENTRIES timing entries for $TOTAL discovered tests, $(format_duration "$WARM_DURATION") estimated"
 
-      - name: Stage warm-start inputs
+      - name: Prepare warm-start inputs
         run: |
           mkdir warm-start-inputs
           cp .orchestration/manifest.json warm-start-inputs/manifest.json
           cp roundtrip-assignment.json warm-start-inputs/assignment.json
           cp jest-monorepo-timing.json warm-start-inputs/timing.json
 
-      - name: Upload warm-start inputs
+      - name: Publish warm-start inputs
         uses: actions/upload-artifact@v4
         with:
           name: jest-warm-start-inputs
@@ -374,7 +376,7 @@ jobs:
           name: jest-warm-start-inputs
           path: warm-start-inputs
 
-      - name: Run warm-start Jest shard
+      - name: Execute warm Jest shard
         working-directory: examples/monorepo/apps/web
         run: |
           set +e
@@ -391,7 +393,7 @@ jobs:
             exit "$EXIT_CODE"
           fi
 
-      - name: Upload warm-start timing artifact
+      - name: Publish warm timing artifact
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
@@ -440,9 +442,10 @@ jobs:
           merge-multiple: true
           path: warm-timing-artifacts
 
-      - name: Validate warm-start execution and collect metrics
+      - name: Validate warm execution measurements
         run: |
           set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/format-duration.sh"
           ASSIGNMENT=warm-start-inputs/assignment.json
           EXPECTED=$(jq '[.shards[].testIds[]] | length' "$ASSIGNMENT")
           OBSERVED=$(jq '[.measurements[]] | length' warm-timing-artifacts/warm-timing-*.json | awk '{ total += $1 } END { print total }')
@@ -453,7 +456,7 @@ jobs:
           [ "$OBSERVED" -eq 48 ] || { echo "::error::warm-start execution measured $OBSERVED tests; expected 48 executable tests"; exit 1; }
           [ "$PLANNED_DURATION" -gt 0 ] || { echo "::error::warm-start plan has zero expected duration"; exit 1; }
           [ "$MEASURED_DURATION" -gt 0 ] || { echo "::error::warm-start execution collected zero duration"; exit 1; }
-          echo "✓ Warm-start execution: $EXPECTED assigned tests, $OBSERVED measurements, $PLANNED_DURATION ms planned, $MEASURED_DURATION ms measured"
+          echo "✓ Warm execution: $EXPECTED assigned tests, $OBSERVED measurements, $(format_duration "$PLANNED_DURATION") planned, $(format_duration "$MEASURED_DURATION") measured"
 
       - name: Merge second-run timings
         uses: ./.github/actions/jest-merge-timing
@@ -463,7 +466,7 @@ jobs:
           output-file: warm-jest-monorepo-timing.json
           manifest: warm-start-inputs/manifest.json
 
-      - name: Validate timing learning
+      - name: Validate second-run timing updates
         run: |
           set -euo pipefail
           FIRST=$(jq '[.projects[].files[]] | length' warm-start-inputs/timing.json)
@@ -474,9 +477,10 @@ jobs:
           [ "$REPEATED" -eq "$FIRST" ] || { echo "::error::second run updated $REPEATED of $FIRST timing entries"; exit 1; }
           echo "✓ Timing learning: $SECOND entries updated by a real second shard execution"
 
-      - name: Write cold-to-warm lifecycle verdict
+      - name: Write Jest lifecycle summary
         run: |
           set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/format-duration.sh"
           COLD=cold-assignment/assignment.json
           WARM=warm-start-inputs/assignment.json
           MANIFEST=warm-start-inputs/manifest.json
@@ -504,10 +508,13 @@ jobs:
             echo "- Discovered occurrences: $DISCOVERED"
             echo "- Assigned occurrences: $COLD_ASSIGNED"
             echo "- Static skip/todo occurrences: $STATIC"
-            echo "- Total planned duration: $COLD_PLANNED ms (10-second fallback estimates)"
+            echo "- Total planned duration: $(format_duration "$COLD_PLANNED") (10-second fallback estimates)"
+            echo ""
             echo "| Cold shard | Files | Tests | Expected duration |"
             echo "| --- | ---: | ---: | ---: |"
-            jq -r '.shards[] | "| \(.shard) | \(.files | length) | \(.testIds | length) | \(.expectedDuration) ms |"' "$COLD"
+            jq -r '.shards[] | [.shard, (.files | length), (.testIds | length), .expectedDuration] | @tsv' "$COLD" | while IFS=$'\t' read -r shard files tests duration; do
+              printf '| %s | %s | %s | %s |\n' "$shard" "$files" "$tests" "$(format_duration "$duration")"
+            done
             echo ""
             echo "### 3. Cold execution and collection"
             echo "- Exact assignment/report coverage: $COLD_ASSIGNED/$COLD_ASSIGNED"
@@ -520,10 +527,14 @@ jobs:
             echo ""
             echo "### 5. Warm plan"
             echo "- Assigned occurrences: $WARM_ASSIGNED (cold: $COLD_ASSIGNED)"
-            echo "- Total planned duration: $WARM_PLANNED ms (cold: $COLD_PLANNED ms)"
+            echo "- Total planned duration: $(format_duration "$WARM_PLANNED") (cold: $(format_duration "$COLD_PLANNED"))"
+            echo ""
             echo "| Warm shard | Files | Tests | Expected duration |"
             echo "| --- | ---: | ---: | ---: |"
-            jq -r '.shards[] | "| \(.shard) | \(.files | length) | \(.testIds | length) | \(.expectedDuration) ms |"' "$WARM"
+            jq -r '.shards[] | [.shard, (.files | length), (.testIds | length), .expectedDuration] | @tsv' "$WARM" | while IFS=$'\t' read -r shard files tests duration; do
+              printf '| %s | %s | %s | %s |\n' "$shard" "$files" "$tests" "$(format_duration "$duration")"
+            done
+            echo ""
             echo "- Placement changed: $PLACEMENT_CHANGED (diagnostic only; wall-clock timing is not required to move a shard)"
             echo ""
             echo "### 6. Warm execution and second merge"
@@ -532,6 +543,7 @@ jobs:
             echo "- Repeated observations: $REPEATED/$FIRST"
             echo ""
             echo "### 7. Final verdict"
+            echo ""
             echo "| Invariant | Expected | Actual | Result |"
             echo "| --- | --- | --- | --- |"
             echo "| Cold assignment coverage | $DISCOVERED | $COLD_ASSIGNED | PASS |"

@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { verifyShardRun } from "./assign.js";
+import { formatDuration } from "./format-duration.js";
 import type { JestJsonReport, ShardPlan } from "./types.js";
 import { splitJestArgs } from "./types.js";
 
@@ -223,7 +224,7 @@ function spawnJestCapture(
   let stderr = "";
   const timer = setTimeout(() => {
     child.kill("SIGKILL");
-    reject(new ShardRunError(`shard run timed out after ${opts.timeoutMs}ms`, ""));
+    reject(new ShardRunError(`shard run timed out after ${formatDuration(opts.timeoutMs)}`, ""));
   }, opts.timeoutMs);
   child.stdout.on("data", (d: Buffer) => {
     stdout += d.toString();

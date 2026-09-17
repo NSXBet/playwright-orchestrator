@@ -11,6 +11,7 @@ import {
   TIMING_DATA_VERSION,
   type TimingData,
 } from "./types.js";
+import { formatDuration } from "./format-duration.js";
 
 export interface DiscoveryOptions {
   /** Directory whose jest config should be used (spawn cwd) */
@@ -122,7 +123,7 @@ function spawnJestCapture(
   let stderr = "";
   const timer = setTimeout(() => {
     child.kill("SIGKILL");
-    reject(new DiscoveryError(`discovery run timed out after ${timeoutMs}ms`, ""));
+    reject(new DiscoveryError(`discovery run timed out after ${formatDuration(timeoutMs)}`, ""));
   }, timeoutMs);
   child.stdout.on("data", (d: Buffer) => {
     stdout += d.toString();
