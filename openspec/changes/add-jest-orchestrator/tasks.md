@@ -1,8 +1,8 @@
 ## 1. Workspace package
 
-- [ ] 1.1 Copy the Jest orchestrator source, CLI entry point, selection shim, package metadata, TypeScript configuration, and unit coverage into `packages/jest-orchestrator/`.
-- [ ] 1.2 Align the package with Bun/Turborepo scripts, public npm metadata, root lockfile, and Changesets publishing while retaining its Jest 30 peer dependency.
-- [ ] 1.3 Validate exact selection, timing merge, and test/file-level assignment through the copied package unit suite.
+- [x] 1.1 Copy the Jest orchestrator source, CLI entry point, selection shim, package metadata, TypeScript configuration, and unit coverage into `packages/jest-orchestrator/`.
+- [x] 1.2 Align the package with Bun/Turborepo scripts, public npm metadata, root lockfile, and Changesets publishing while retaining its Jest 30 peer dependency.
+- [x] 1.3 Validate exact selection, timing merge, and test/file-level assignment through the copied package unit suite.
 
 ## 2. Jest Actions and fixtures
 

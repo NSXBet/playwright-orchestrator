@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@nsxbet/jest-orchestrator",
+  "version": "0.1.0",
+  "description": "Exact per-test Jest distribution across CI shards using historical timing data",
+  "keywords": [
+    "ci",
+    "jest",
+    "orchestrator",
+    "parallel",
+    "sharding",
+    "testing"
+  ],
+  "homepage": "https://github.com/NSXBet/test-orchestrator#readme",
+  "bugs": {
+    "url": "https://github.com/NSXBet/test-orchestrator/issues"
+  },
+  "license": "MIT",
+  "author": "NSXBet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NSXBet/test-orchestrator.git",
+    "directory": "packages/jest-orchestrator"
+  },
+  "bin": {
+    "jest-orchestrator": "./bin/run.js"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "core": [
+        "./dist/core/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "require": "./dist/core/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -b && cp src/jest-runner/selection-shim.js dist/selection-shim.js",
+    "dev": "tsc -b --watch",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "lint": "oxlint src __tests__ bin",
+    "type-check": "tsc --noEmit",
+    "test": "bun test __tests__",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "@oclif/core": "4.8.0"
+  },
+  "devDependencies": {
+    "jest": "30.2.0"
+  },
+  "peerDependencies": {
+    "jest": "^30"
+  },
+  "oclif": {
+    "bin": "jest-orchestrator",
+    "commands": "./dist/commands",
+    "dirname": "jest-orchestrator",
+    "topicSeparator": " "
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
