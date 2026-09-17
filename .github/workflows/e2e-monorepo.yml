@@ -768,7 +768,7 @@ jobs:
           mapfile -t REPORTS < <(find warm-reports -name '*.json' -print)
           [ "${#REPORTS[@]}" -gt 0 ] || { echo "::error::warm report coverage failed: no reports found under warm-reports"; exit 1; }
           OBSERVED=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[]] | length' "${REPORTS[@]}")
-          MEASURED=$(jq '[.tests | length] | add' warm-timing-shard-*.json)
+          MEASURED=$(jq -s 'map(.tests | length) | add' warm-timing-shard-*.json)
           [ "$EXPECTED" -eq "$OBSERVED" ] || { echo "::error::warm report coverage failed: expected $EXPECTED assigned occurrences, observed $OBSERVED; inspect warm-reports"; exit 1; }
           [ "$MEASURED" -gt 0 ] || { echo "::error::warm timing collection produced zero measurements; inspect warm-timing-shard artifacts"; exit 1; }
           playwright-orchestrator merge-timing --existing warm-inputs/playwright-timing.json --new warm-timing-shard-*.json --output warm-timing.json
