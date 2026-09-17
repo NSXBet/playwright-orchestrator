@@ -1,0 +1,19 @@
+openspec/changes/add-cold-warm-e2e-lifecycle/tasks.md
+  s_a366f4bba4f921::t_33ec5cbd91b10d 15-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3c8a0f1c520ff86c04fce8a861683a97dccdb521",
+  "prompts": {},
+  "sessions": {
+    "s_a366f4bba4f921": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ad84-c2c2-7250-9966-d3f075c70c8d",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
