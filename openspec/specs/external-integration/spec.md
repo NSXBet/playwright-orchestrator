@@ -1,8 +1,11 @@
 # external-integration Specification
 
 ## Purpose
+
 TBD - created by archiving change add-external-usage. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Setup Action for External Users
 
 The system SHALL provide a GitHub Action that installs and caches the playwright-orchestrator CLI for use in external repositories.
@@ -181,4 +184,3 @@ Actions SHALL encapsulate all parsing and fallback logic. Users SHALL NOT need s
 - **THEN** they do NOT need to add any orchestrator imports to playwright.config.ts
 - **AND** they do NOT need to install `@nsxbet/playwright-orchestrator` as a project dependency
 - **AND** the orchestrator is purely a CI tool (CLI + Actions)
-

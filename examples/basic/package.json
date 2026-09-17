@@ -1,8 +1,8 @@
 {
   "name": "playwright-orchestrator-example",
   "version": "1.0.0",
-  "description": "Example Playwright project for testing the orchestrator",
   "private": true,
+  "description": "Example Playwright project for testing the orchestrator",
   "type": "module",
   "scripts": {
     "test": "playwright test",

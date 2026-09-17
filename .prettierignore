@@ -1,0 +1,5 @@
+# JavaScript is linted with Oxlint only; do not format it with Oxfmt.
+**/*.js
+**/*.cjs
+**/*.mjs
+**/*.jsx

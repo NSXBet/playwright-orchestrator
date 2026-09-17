@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "src/**"
+      - "packages/playwright-orchestrator/**"
       - "examples/monorepo/**"
       - ".github/workflows/e2e-monorepo.yml"
       - ".github/actions/**"
@@ -15,7 +15,7 @@ env:
 jobs:
   # Job 1: Build and create tarball for other jobs
   setup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -31,19 +31,20 @@ jobs:
         run: bun run build
 
       - name: Create tarball
+        working-directory: packages/playwright-orchestrator
         run: npm pack
 
       - name: Upload tarball artifact
         uses: actions/upload-artifact@v4
         with:
           name: package-tarball
-          path: "*.tgz"
+          path: "packages/playwright-orchestrator/*.tgz"
           retention-days: 1
 
   # Job 2: Orchestrate tests using the real action
   orchestrate:
     needs: [setup]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       test-list-files: ${{ steps.orchestrate.outputs.test-list-files }}
       use-orchestrator: ${{ steps.orchestrate.outputs.use-orchestrator }}
@@ -53,9 +54,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: package-tarball
+          path: packages/playwright-orchestrator
 
       - name: Install CLI globally from tarball
-        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+        run: npm install -g ./packages/playwright-orchestrator/nsxbet-playwright-orchestrator-*.tgz
 
       - name: Install monorepo dependencies
         working-directory: examples/monorepo/apps/web
@@ -95,7 +97,7 @@ jobs:
   # Job 3: Run tests in parallel matrix using real actions
   e2e-tests:
     needs: [setup, orchestrate]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -106,9 +108,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: package-tarball
+          path: packages/playwright-orchestrator
 
       - name: Install CLI globally from tarball
-        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+        run: npm install -g ./packages/playwright-orchestrator/nsxbet-playwright-orchestrator-*.tgz
 
       - name: Install monorepo dependencies
         working-directory: examples/monorepo/apps/web
@@ -152,7 +155,7 @@ jobs:
           else
             npx playwright test ${{ steps.shard.outputs.fallback-args }} 2>&1 | tee /tmp/playwright-output.txt || true
           fi
-          
+
           # Extract test counts from Playwright's summary line
           PASSED_COUNT=$(grep -oP '\d+(?= passed)' /tmp/playwright-output.txt | tail -1 || echo "0")
           SKIPPED_COUNT=$(grep -oP '\d+(?= skipped)' /tmp/playwright-output.txt | tail -1 || echo "0")
@@ -164,18 +167,18 @@ jobs:
       - name: Validate orchestrator filtering
         run: |
           echo "=== Validating orchestrator filtering ==="
-          
+
           EXPECTED_COUNT="${{ steps.shard.outputs.test-count }}"
           echo "Expected tests for this shard: $EXPECTED_COUNT"
-          
+
           PASSED_COUNT="${{ steps.playwright.outputs.playwright-passed }}"
           TOTAL_COUNT="${{ steps.playwright.outputs.playwright-total }}"
           echo "Playwright reported: $PASSED_COUNT passed, $TOTAL_COUNT total (passed + skipped)"
-          
+
           TOLERANCE=3
           DIFF=$((TOTAL_COUNT - EXPECTED_COUNT))
           ABS_DIFF=${DIFF#-}
-          
+
           if [ "$ABS_DIFF" -gt "$TOLERANCE" ]; then
             echo "::error::TEST COUNT MISMATCH!"
             echo "::error::Expected: $EXPECTED_COUNT tests (from shard assignment)"
@@ -183,12 +186,12 @@ jobs:
             echo "::error::Difference: $DIFF (tolerance: $TOLERANCE)"
             exit 1
           fi
-          
+
           if [ "$PASSED_COUNT" -lt 5 ]; then
             echo "::error::ORCHESTRATOR FILTERING FAILED! Shard only ran $PASSED_COUNT tests, expected at least 5"
             exit 1
           fi
-          
+
           echo "✓ Orchestrator filtering validated: $TOTAL_COUNT tests visible (expected: $EXPECTED_COUNT, within tolerance: $TOLERANCE)"
 
       # Upload the raw Playwright JSON report for debugging
@@ -215,34 +218,34 @@ jobs:
         if: success() || failure()
         run: |
           echo "=== Validating Timing Artifact Test ID Format ==="
-          
+
           if [ ! -f "timing-shard-${{ matrix.shardIndex }}.json" ]; then
             echo "No timing artifact found, skipping validation"
             exit 0
           fi
-          
+
           echo "Sample test IDs from timing artifact:"
           cat "timing-shard-${{ matrix.shardIndex }}.json" | jq -r '.tests | keys[:5][]' 2>/dev/null || echo "Could not parse"
           echo ""
-          
+
           # Check for ../ path traversal (path mismatch bug)
           PATH_MISMATCH_BUG=$(cat "timing-shard-${{ matrix.shardIndex }}.json" | jq -r '.tests | keys[]' | grep -E '^\.\.' || true)
-          
+
           if [ -n "$PATH_MISMATCH_BUG" ]; then
             echo "::error::BUG DETECTED! Path mismatch causing ../ in test IDs!"
             echo "$PATH_MISMATCH_BUG" | head -5
             exit 1
           fi
-          
+
           # Check for duplicate filename bug
           DUPLICATE_FILENAME_BUG=$(cat "timing-shard-${{ matrix.shardIndex }}.json" | jq -r '.tests | keys[]' | grep -E '\.spec\.(ts|js)::[^:]*\.spec\.(ts|js)::' || true)
-          
+
           if [ -n "$DUPLICATE_FILENAME_BUG" ]; then
             echo "::error::BUG DETECTED! Duplicate filename in test IDs!"
             echo "$DUPLICATE_FILENAME_BUG" | head -5
             exit 1
           fi
-          
+
           echo "✓ No path mismatch or duplicate filename bugs detected in timing artifact"
 
       # Rename blob report to avoid filename collision during merge
@@ -281,13 +284,14 @@ jobs:
   merge-reports:
     needs: [setup, e2e-tests]
     if: ${{ success() || failure() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
           name: package-tarball
+          path: packages/playwright-orchestrator
 
       - name: Install monorepo dependencies (for Playwright merge-reports)
         working-directory: examples/monorepo/apps/web
@@ -378,16 +382,17 @@ jobs:
   merge:
     needs: [setup, e2e-tests, merge-reports]
     if: ${{ success() || failure() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
           name: package-tarball
+          path: packages/playwright-orchestrator
 
       - name: Install CLI globally from tarball
-        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+        run: npm install -g ./packages/playwright-orchestrator/nsxbet-playwright-orchestrator-*.tgz
 
       - name: Download timing artifacts
         uses: actions/download-artifact@v4
@@ -437,28 +442,28 @@ jobs:
       - name: Validate timing data round-trip
         run: |
           echo "=== Validating Timing Data Round-Trip ==="
-          
+
           RESULT=$(playwright-orchestrator assign \
             --test-list test-list.json \
             --timing-file playwright-timing.json \
             --shards 2 \
             --output-format json)
-          
+
           echo "=== Assign Output ==="
           echo "$RESULT" | jq '.'
           echo ""
-          
+
           TOTAL_TESTS=$(echo "$RESULT" | jq -r '.totalTests')
           ESTIMATED_COUNT=$(echo "$RESULT" | jq -r '.estimatedTests | length')
           IS_OPTIMAL=$(echo "$RESULT" | jq -r '.isOptimal')
-          
+
           echo "Total tests discovered: $TOTAL_TESTS"
           echo "Tests with estimated duration (no timing match): $ESTIMATED_COUNT"
           echo "Optimal solution: $IS_OPTIMAL"
-          
+
           TIMING_TEST_COUNT=$(cat playwright-timing.json | jq '.tests | length')
           echo "Timing data has $TIMING_TEST_COUNT test entries"
-          
+
           if [ "$TIMING_TEST_COUNT" -gt 0 ] && [ "$ESTIMATED_COUNT" -eq "$TOTAL_TESTS" ]; then
             echo "::error::TIMING DATA NOT BEING USED!"
             echo "::error::Timing file has $TIMING_TEST_COUNT entries but ALL $TOTAL_TESTS tests are estimated"
@@ -468,16 +473,16 @@ jobs:
             echo "$RESULT" | jq -r '.shards["1"][:5][]'
             exit 1
           fi
-          
+
           ESTIMATED_PCT=$((ESTIMATED_COUNT * 100 / TOTAL_TESTS))
           MAX_ESTIMATED_PCT=20
-          
+
           if [ "$ESTIMATED_PCT" -gt "$MAX_ESTIMATED_PCT" ]; then
             echo "::warning::High ratio of estimated tests: ${ESTIMATED_PCT}%"
             echo "Estimated tests (no timing match):"
             echo "$RESULT" | jq -r '.estimatedTests[:10][]'
           fi
-          
+
           echo ""
           echo "✓ Timing data round-trip validated!"
           echo "  - $((TOTAL_TESTS - ESTIMATED_COUNT)) tests matched timing data"

@@ -5,7 +5,7 @@ inputs:
   existing-file:
     description: Path to existing timing data to merge with (optional)
     required: false
-    default: ''
+    default: ""
   new-files:
     description: Space-separated paths to new timing artifact files
     required: true
@@ -15,11 +15,11 @@ inputs:
   alpha:
     description: EMA smoothing factor (0-1)
     required: false
-    default: '0.3'
+    default: "0.3"
   prune-days:
     description: Remove entries older than N days
     required: false
-    default: '30'
+    default: "30"
 
 outputs:
   test-count:

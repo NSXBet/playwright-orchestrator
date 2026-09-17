@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@nsxbet/playwright-orchestrator",
+  "version": "2.0.0",
+  "description": "Intelligent Playwright test distribution across CI shards using historical timing data",
+  "keywords": [
+    "ci",
+    "orchestrator",
+    "parallel",
+    "playwright",
+    "sharding",
+    "testing"
+  ],
+  "homepage": "https://github.com/NSXBet/playwright-orchestrator#readme",
+  "bugs": {
+    "url": "https://github.com/NSXBet/playwright-orchestrator/issues"
+  },
+  "license": "MIT",
+  "author": "NSXBet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NSXBet/playwright-orchestrator.git",
+    "directory": "packages/playwright-orchestrator"
+  },
+  "bin": {
+    "playwright-orchestrator": "./bin/run.js"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "core": [
+        "./dist/core/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "require": "./dist/core/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "lint": "oxlint src __tests__ bin",
+    "type-check": "tsc --noEmit",
+    "test": "bun test __tests__",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "@oclif/core": "4.8.0",
+    "glob": "11.0.2"
+  },
+  "oclif": {
+    "bin": "playwright-orchestrator",
+    "commands": "./dist/commands",
+    "dirname": "playwright-orchestrator",
+    "topicSeparator": " "
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

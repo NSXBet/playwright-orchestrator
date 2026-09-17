@@ -6,8 +6,11 @@ dist/
 tsconfig.tsbuildinfo
 
 # Bun
-bun.lock
 bun.lockb
+
+# Workspace tooling
+.turbo/
+.build/
 
 # IDE
 .idea/

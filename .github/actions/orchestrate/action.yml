@@ -92,7 +92,7 @@ runs:
         # Extract data from result
         IS_OPTIMAL=$(echo "$RESULT" | jq -r ".isOptimal // false")
         TOTAL_TESTS=$(echo "$RESULT" | jq -r ".totalTests // 0")
-        
+
         echo "use-orchestrator=true" >> $GITHUB_OUTPUT
         echo "test-list-files=$(echo "$RESULT" | jq -c '.testListFiles')" >> $GITHUB_OUTPUT
         echo "expected-durations=$(echo "$RESULT" | jq -c '.expectedDurations')" >> $GITHUB_OUTPUT

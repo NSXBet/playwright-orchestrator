@@ -7,43 +7,52 @@ Instructions for AI coding assistants working on this project.
 `@nsxbet/playwright-orchestrator` is a CLI tool for distributing Playwright tests across CI shards using historical timing data.
 
 **Tech Stack:**
+
 - Runtime: Bun 1.3.6
 - Language: TypeScript 5.9.3 (ESM)
 - CLI: oclif 4.8.0
-- Linter: Biome 2.3.11
+- Linter: Oxlint 1.41.0
+- Formatter: Oxfmt 0.35.0
 - Tests: Bun test
 
 ## Before Starting
 
-1. Read `openspec/project.md` for conventions
-2. Check `openspec/changes/` for active proposals
-3. Run `make lint && make typecheck` to verify setup
+1. For OpenSpec work, read the matching workflow in `.agents/skills/`:
+   - `openspec-propose` for a new capability, architecture, or behavior-changing change;
+   - `openspec-apply-change` to implement an approved change;
+   - `openspec-archive-change` to archive a completed, deployed change.
+2. Read `openspec/project.md` for conventions and check `openspec/changes/` for active proposals.
+3. Run `make lint && make typecheck` to verify setup.
 
 ## Code Style
 
-- Use Biome for linting and formatting
+- Use Oxlint for linting and Oxfmt for formatting
 - ESM modules with `.js` extensions in imports
 - Strict TypeScript (`strict: true`)
-- Single quotes, semicolons
+- Let Oxfmt determine whitespace and quote style
 
 ```typescript
 // Good
-import { something } from './module.js';
+import { something } from "./module.js";
 
 // Bad
-import { something } from './module';
+import { something } from "./module";
 ```
 
 ## Architecture
 
 ```
-src/
-├── commands/     # CLI commands (oclif)
-├── core/         # Algorithms and utilities
-└── index.ts      # Package entry point
+packages/playwright-orchestrator/
+├── src/
+│   ├── commands/ # CLI commands (oclif)
+│   ├── core/     # Algorithms and utilities
+│   └── index.ts  # Package entry point
+├── __tests__/    # Bun unit tests
+└── bin/          # CLI executable
 ```
 
 **Key Principles:**
+
 - Storage-agnostic: Core works with files only
 - Graceful fallback: Always have a fallback path
 - Test coverage: Add tests for new functionality
@@ -57,17 +66,20 @@ The orchestrator's correctness depends on ALL components generating **IDENTICAL 
 **Single source of truth for path resolution: `project.testDir`**
 
 ALL components MUST use `project.testDir` (not `config.rootDir`) for path resolution:
+
 - **Discovery**: Uses `project.testDir` from test-list.json config
 - **Timing extraction**: Uses `project.testDir` from report config
 
 **NEVER fall back to `process.cwd()` or `config.rootDir`** - this causes path mismatch bugs when `testDir` is a subdirectory (e.g., `testDir: './src/test/e2e'`).
 
-**Test ID generation** uses `buildTestId` from `src/core/types.ts`:
+**Test ID generation** uses `buildTestId` from `packages/playwright-orchestrator/src/core/types.ts`:
+
 - Data comes pre-processed from Playwright's `--list` JSON or report JSON
 - titlePath already excludes project name and filename
 
-**Test-list format conversion** uses `toTestListFormat` / `toTestListFile` from `src/core/test-id.ts`:
-- Converts internal `::` format to Playwright's ` › ` format
+**Test-list format conversion** uses `toTestListFormat` / `toTestListFile` from `packages/playwright-orchestrator/src/core/test-id.ts`:
+
+- Converts internal `::` format to Playwright's `›` format
 - Prepends `testDirPrefix` (relative path from rootDir to testDir) for monorepo support
 
 ### No Flaky Assumptions
@@ -75,6 +87,7 @@ ALL components MUST use `project.testDir` (not `config.rootDir`) for path resolu
 **NEVER make assumptions about user directory structure or naming conventions.**
 
 Bad examples (DO NOT DO):
+
 - "Strip `apps/` or `packages/` prefix for monorepos"
 - "Assume testDir is always `e2e/`"
 - "File paths starting with `src/` should be normalized"
@@ -82,6 +95,7 @@ Bad examples (DO NOT DO):
 - "Use `config.rootDir` instead of `project.testDir`"
 
 **All path handling must be deterministic**, based solely on:
+
 - Playwright's `project.testDir` (NOT `config.rootDir`)
 - Actual file paths from `testInfo.file` or JSON output
 - Standard Node.js `path.relative()` behavior
@@ -128,11 +142,13 @@ When historical timing data is unavailable, the orchestrator estimates durations
 ```
 
 **First run behavior:**
+
 - All tests are marked `estimated: true`
 - Distribution is "blind" - based on estimates only
 - Actual timing is collected after run
 
 **Subsequent runs:**
+
 - Real timing data is loaded from cache
 - EMA smoothing prevents outliers from skewing distribution
 - Distribution improves significantly
@@ -148,6 +164,7 @@ Default α = 0.3 (30% weight on new measurement)
 ```
 
 This means:
+
 - Recent measurements matter more than old ones
 - A single outlier won't dramatically shift estimates
 - Gradual adaptation to changing test durations
@@ -159,10 +176,12 @@ The orchestrator uses Playwright's `--test-list` CLI flag (Playwright 1.56+) for
 No fixture, reporter, or `playwright.config.ts` changes are needed.
 
 **Test ID Format**: `{relative-path}::{describe}::{test-title}`
+
 - Path is relative to Playwright's `project.testDir` (NOT `config.rootDir`), with forward slashes
 - Example: `login.spec.ts::Login::should login`
 
 **Test-list format**: `{rootDir-relative-path} › {describe} › {test-title}`
+
 - Converted from internal `::` format to Playwright's `›` format
 - File paths are relative to `rootDir` (not `testDir`), matching Playwright's `--test-list` resolution
 
@@ -195,31 +214,31 @@ In monorepos, the orchestrator generates test-list files with rootDir-relative p
 ```yaml
 # In CI workflow
 - name: Generate test list
-  working-directory: apps/bet-client  # Same as where tests run
+  working-directory: apps/bet-client # Same as where tests run
   run: npx playwright test --list --reporter=json > test-list.json
 
 - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v2
   with:
-    test-list: apps/bet-client/test-list.json  # Path from repo root
+    test-list: apps/bet-client/test-list.json # Path from repo root
 ```
 
 ## Common Tasks
 
 ### Adding a CLI Command
 
-1. Create `src/commands/my-command.ts`
+1. Create `packages/playwright-orchestrator/src/commands/my-command.ts`
 2. Follow oclif pattern:
 
 ```typescript
-import { Command, Flags } from '@oclif/core';
+import { Command, Flags } from "@oclif/core";
 
 export default class MyCommand extends Command {
-  static override description = 'Description';
+  static override description = "Description";
 
   static override flags = {
-    'my-flag': Flags.string({
-      char: 'm',
-      description: 'Flag description',
+    "my-flag": Flags.string({
+      char: "m",
+      description: "Flag description",
       required: true,
     }),
   };
@@ -233,9 +252,9 @@ export default class MyCommand extends Command {
 
 ### Adding Core Functionality
 
-1. Create `src/core/my-module.ts`
-2. Export from `src/core/index.ts`
-3. Add tests in `__tests__/my-module.test.ts`
+1. Create `packages/playwright-orchestrator/src/core/my-module.ts`
+2. Export from `packages/playwright-orchestrator/src/core/index.ts`
+3. Add tests in `packages/playwright-orchestrator/__tests__/my-module.test.ts`
 
 ### Running Quality Checks
 
@@ -270,7 +289,7 @@ When adding features or making significant changes:
 
 ```bash
 bun test                    # All tests
-bun test __tests__/foo.ts   # Specific file
+bun test packages/playwright-orchestrator/__tests__/foo.ts   # Specific file
 ```
 
 ### Local E2E Testing
@@ -293,6 +312,7 @@ The `e2e-monorepo.yml` workflow tests the orchestrator in a realistic monorepo s
 ```
 
 **Workflow Structure:**
+
 - **setup**: Builds package, creates tarball artifact
 - **orchestrate**: Uses real `orchestrate` action to assign tests
 - **e2e-tests**: Matrix job using `get-shard` and `extract-timing` actions
@@ -301,6 +321,7 @@ The `e2e-monorepo.yml` workflow tests the orchestrator in a realistic monorepo s
 **Note**: Publish validation is handled separately in CI via the `test-publish` job (Verdaccio).
 
 **Test Scenarios in `examples/monorepo/`:**
+
 - Path normalization (`apps/web/` prefix handling)
 - Parameterized tests (`test.each` patterns)
 - Nested describe blocks (4+ levels deep)
@@ -310,6 +331,7 @@ The `e2e-monorepo.yml` workflow tests the orchestrator in a realistic monorepo s
 - Deep subdirectory paths (`features/deep/path.spec.ts`)
 
 **Key Files:**
+
 - `.github/workflows/e2e-monorepo.yml` - Main E2E workflow
 - `examples/monorepo/` - Test monorepo structure mirroring bet-app
 - `verdaccio/config.yaml` - Local registry config for testing
@@ -342,6 +364,7 @@ The recommended pattern for external users:
 ### Storage-Agnostic Design
 
 Actions do NOT handle cache/artifacts internally. Users control:
+
 - Cache keys and paths
 - Artifact upload/download
 - Storage backends (cache, S3, etc.)
@@ -358,8 +381,8 @@ Actions do NOT handle cache/artifacts internally. Users control:
 
 - uses: NSXBet/playwright-orchestrator/.github/actions/orchestrate@v2
   with:
-    test-list: test-list.json  # Required: pre-generated list
-    timing-file: timing-data.json  # Required: timing data
+    test-list: test-list.json # Required: pre-generated list
+    timing-file: timing-data.json # Required: timing data
     shards: 4
 ```
 
@@ -377,13 +400,13 @@ See [docs/external-integration.md](./docs/external-integration.md#cache-strategy
 
 ### Key Actions
 
-| Action | Purpose |
-|--------|---------|
-| `setup-orchestrator` | Install and cache the CLI |
-| `orchestrate` | Assign tests to shards (outputs `test-list-files` JSON) |
-| `get-shard` | Write `test-list-file` for Playwright `--test-list` flag |
-| `extract-timing` | Extract timing from Playwright reports (requires `project`) |
-| `merge-timing` | Merge timing data with EMA smoothing |
+| Action               | Purpose                                                     |
+| -------------------- | ----------------------------------------------------------- |
+| `setup-orchestrator` | Install and cache the CLI                                   |
+| `orchestrate`        | Assign tests to shards (outputs `test-list-files` JSON)     |
+| `get-shard`          | Write `test-list-file` for Playwright `--test-list` flag    |
+| `extract-timing`     | Extract timing from Playwright reports (requires `project`) |
+| `merge-timing`       | Merge timing data with EMA smoothing                        |
 
 ### Test Discovery
 
@@ -394,6 +417,7 @@ npx playwright test --list --reporter=json --project "Mobile Chrome" > test-list
 ```
 
 This ensures accurate discovery of:
+
 - Parameterized tests (`test.each`, data-driven tests)
 - Template literals in test names (e.g., `${variable}`)
 - All test syntax patterns
@@ -429,24 +453,25 @@ Use `if: success() || failure()` instead of `always()`:
 
 ```yaml
 - name: Extract timing
-  if: success() || failure()  # NOT always() - skip on cancel
+  if: success() || failure() # NOT always() - skip on cancel
   uses: NSXBet/playwright-orchestrator/.github/actions/extract-timing@v2
 ```
 
 ### Key Documentation
 
-| Resource | Purpose |
-|----------|---------|
-| `docs/external-integration.md` | Complete integration guide |
-| `examples/external-workflow.yml` | Copy-paste workflow template |
-| `README.md` | Quick start for external users |
+| Resource                         | Purpose                        |
+| -------------------------------- | ------------------------------ |
+| `docs/external-integration.md`   | Complete integration guide     |
+| `examples/external-workflow.yml` | Copy-paste workflow template   |
+| `README.md`                      | Quick start for external users |
 
 ## Important Files
 
-| File | Purpose |
-|------|---------|
-| `openspec/project.md` | Project conventions |
-| `openspec/changes/` | Active change proposals |
-| `biome.json` | Linter config |
-| `tsconfig.json` | TypeScript config |
-| `Makefile` | Common commands |
+| File                                             | Purpose                   |
+| ------------------------------------------------ | ------------------------- |
+| `openspec/project.md`                            | Project conventions       |
+| `openspec/changes/`                              | Active change proposals   |
+| `packages/playwright-orchestrator/tsconfig.json` | Package TypeScript config |
+| `turbo.json`                                     | Workspace task graph      |
+| `biome.json`                                     | Workspace linter config   |
+| `Makefile`                                       | Common commands           |

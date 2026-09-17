@@ -5,7 +5,7 @@ inputs:
   version:
     description: Package version to install (defaults to latest)
     required: false
-    default: ''
+    default: ""
 
 outputs:
   version:

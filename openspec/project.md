@@ -9,7 +9,7 @@
 Default Playwright sharding (`--shard=N/M`) distributes tests by file count, not by duration. This creates significant imbalance:
 
 | Shard   | Duration | Difference |
-|---------|----------|------------|
+| ------- | -------- | ---------- |
 | Shard 1 | ~31 min  | +182%      |
 | Shard 2 | ~15 min  | +36%       |
 | Shard 3 | ~22 min  | +100%      |
@@ -22,7 +22,8 @@ The CI time is bottlenecked by the slowest shard, wasting runner time.
 - **Runtime**: Bun 1.3.6
 - **Language**: TypeScript 5.9.3 (ESM)
 - **CLI Framework**: oclif 4.8.0
-- **Linter/Formatter**: Biome 2.3.11
+- **Workspace Orchestrator**: Turborepo 2.8.3
+- **Linter/Formatter**: Oxlint 1.41.0 and Oxfmt 0.35.0
 - **Test Framework**: Bun test
 - **Version Manager**: mise with `.tool-versions`
 
@@ -30,7 +31,7 @@ The CI time is bottlenecked by the slowest shard, wasting runner time.
 
 ### Code Style
 
-- Use Biome for linting and formatting
+- Use Oxlint for linting and Oxfmt for formatting
 - ESM modules (`.js` extensions in imports)
 - Strict TypeScript (`strict: true`)
 

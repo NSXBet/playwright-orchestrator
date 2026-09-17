@@ -17,6 +17,9 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
+      - name: Check formatting
+        run: bun run format:check
+
       - name: Lint
         run: bun run lint
 
@@ -78,9 +81,10 @@ jobs:
 
       - name: Publish to Verdaccio
         run: |
+          cd packages/playwright-orchestrator
           npm pkg set version=0.0.0-test.${{ github.run_id }}
           npm pkg delete publishConfig
-          npm publish --registry http://localhost:4873
+          npm publish --tag test --registry http://localhost:4873
           git checkout package.json
 
       - name: Verify install from Verdaccio

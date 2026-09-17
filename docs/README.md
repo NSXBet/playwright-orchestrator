@@ -7,6 +7,7 @@ Documentation for intelligent Playwright test distribution.
 ### Test-Level Distribution
 
 **[test-level-reporter.md](./test-level-reporter.md)**
+
 - Custom Reporter for exact test filtering
 - Solves shell escaping and substring collision problems
 - ~5 min read
@@ -14,6 +15,7 @@ Documentation for intelligent Playwright test distribution.
 ### External Integration
 
 **[external-integration.md](./external-integration.md)**
+
 - Complete guide for external repositories
 - GitHub Actions workflow patterns
 - Three-phase workflow (orchestrate → test → merge-timing)

@@ -8,13 +8,13 @@ This guide explains how to integrate the playwright-orchestrator into your own G
 
 The orchestrator provides GitHub Actions that you can reference directly in your workflows:
 
-| Action               | Purpose                                                      |
-| -------------------- | ------------------------------------------------------------ |
-| `setup-orchestrator` | Install and cache the CLI                                    |
-| `orchestrate`        | Assign tests to shards (outputs `test-list-files` JSON)      |
-| `get-shard`          | Write `test-list-file` for Playwright `--test-list` flag     |
-| `extract-timing`     | Extract timing from Playwright reports (requires project)    |
-| `merge-timing`       | Merge timing data from multiple shards                       |
+| Action               | Purpose                                                   |
+| -------------------- | --------------------------------------------------------- |
+| `setup-orchestrator` | Install and cache the CLI                                 |
+| `orchestrate`        | Assign tests to shards (outputs `test-list-files` JSON)   |
+| `get-shard`          | Write `test-list-file` for Playwright `--test-list` flag  |
+| `extract-timing`     | Extract timing from Playwright reports (requires project) |
+| `merge-timing`       | Merge timing data from multiple shards                    |
 
 ## Versioning
 
@@ -338,13 +338,13 @@ jobs:
 
 ### Key Design Decisions
 
-| Decision | Rationale |
-| --- | --- |
-| `test-list-files` via job outputs | Job outputs persist across attempts — no re-computation needed |
+| Decision                            | Rationale                                                                                                            |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `test-list-files` via job outputs   | Job outputs persist across attempts — no re-computation needed                                                       |
 | Merge **all** shards' last-run data | A shard may need to re-run a test that was originally in a different shard (edge case with `--last-failed` matching) |
-| `failedTests` length guard | Prevents `--last-failed` from silently running zero tests when the `.last-run.json` exists but has no failures |
-| Artifact naming with `e2e-` prefix | Avoids collisions with other workflow artifacts; includes attempt number for multi-retry scenarios |
-| `!cancelled()` for last-run upload | Ensures last-run data is saved even on failure, but not on cancellation |
+| `failedTests` length guard          | Prevents `--last-failed` from silently running zero tests when the `.last-run.json` exists but has no failures       |
+| Artifact naming with `e2e-` prefix  | Avoids collisions with other workflow artifacts; includes attempt number for multi-retry scenarios                   |
+| `!cancelled()` for last-run upload  | Ensures last-run data is saved even on failure, but not on cancellation                                              |
 
 ### Why Orchestration Must Be in a Separate Job
 

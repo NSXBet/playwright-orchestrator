@@ -1,17 +1,17 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  testDir: './src/test/e2e',
+  testDir: "./src/test/e2e",
   reporter:
-    process.env.CI === 'true'
+    process.env.CI === "true"
       ? [
-          ['list'],
-          ['blob'],
-          ['html'],
-          ['json', { outputFile: 'playwright-report/results.json' }],
-          ['github'],
+          ["list"],
+          ["blob"],
+          ["html"],
+          ["json", { outputFile: "playwright-report/results.json" }],
+          ["github"],
           [
-            '@estruyf/github-actions-reporter',
+            "@estruyf/github-actions-reporter",
             {
               showAnnotations: false,
               useDetails: true,
@@ -19,14 +19,14 @@ export default defineConfig({
             },
           ],
         ]
-      : [['list'], ['html']],
+      : [["list"], ["html"]],
   use: {
-    browserName: 'chromium',
+    browserName: "chromium",
   },
   projects: [
     {
-      name: 'chromium',
-      use: { browserName: 'chromium' },
+      name: "chromium",
+      use: { browserName: "chromium" },
     },
   ],
 });
