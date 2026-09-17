@@ -1,0 +1,52 @@
+.github/workflows/e2e-jest-example.yml
+  s_a366f4bba4f921::t_144f1edc5bc2f7 158
+packages/jest-orchestrator/README.md
+  s_a366f4bba4f921::t_95f9bc875839f2 58-60
+  s_a366f4bba4f921::t_e6c3691ded5aa2 44-51
+packages/jest-orchestrator/src/commands/annotate.ts
+  s_a366f4bba4f921::t_bcfb28bc30ec33 65-68
+  s_a366f4bba4f921::t_f4a70981dbf54c 3,51-64,69-95,115-117,123-125,130-132,134-136,142,144-146,149,175,181-183
+  s_a366f4bba4f921::t_3ba4c6833215a1 126-129,133
+packages/jest-orchestrator/src/core/assign.ts
+  s_a366f4bba4f921::t_9009b2ba22887b 41-43,51-58,60-61
+  s_a366f4bba4f921::t_cb4f30a393a602 65-68,89-90,93
+  s_a366f4bba4f921::t_e5acf780863b2d 7-8
+packages/jest-orchestrator/__tests__/core.test.ts
+  s_a366f4bba4f921::t_5ae5a30aae0a29 211-220
+  s_a366f4bba4f921::t_bcfb28bc30ec33 314-337
+  s_a366f4bba4f921::t_23c7c8b2aba728 221-242
+  s_a366f4bba4f921::t_615e8d0a056ae5 259,266
+  s_a366f4bba4f921::t_fd25ffdcdaa278 243-258,260-265,267-269,349
+  s_a366f4bba4f921::t_aa5b5473882c9b 8,12-17,278-313,338-348
+  s_a366f4bba4f921::t_1fb2ff0523ecf4 350-351
+.changeset/moody-radios-shave.md
+  s_a366f4bba4f921::t_74911f2fb23a26 5
+docs/jest-external-integration.md
+  s_a366f4bba4f921::t_7b9e886a935745 196-199
+  s_a366f4bba4f921::t_36b7b414aa2039 242-255
+.github/workflows/e2e-jest-monorepo.yml
+  s_a366f4bba4f921::t_3b7595d810bfe8 94,328-331
+  s_a366f4bba4f921::t_e3c85f925cccd8 180
+  s_a366f4bba4f921::t_9ac13bfbd6ce35 450,453
+  s_a366f4bba4f921::t_bb4894d2756d46 332,340-343,345-374,376-382,384-407,421-423,425-434,436-441,443-445
+  s_a366f4bba4f921::t_9df4f331873b65 446-449,451-452,454-457,459-464
+  s_a366f4bba4f921::t_1b5c0a87ffe2f3 442
+  s_a366f4bba4f921::t_bc40903cbd9ed0 408-420
+  s_a366f4bba4f921::t_74bbe49a64da94 333-339,344,375,383,424,435,458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1cc0704b8f029d40ba3b979c5753c04ce8b78b58",
+  "prompts": {},
+  "sessions": {
+    "s_a366f4bba4f921": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ad84-c2c2-7250-9966-d3f075c70c8d",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
