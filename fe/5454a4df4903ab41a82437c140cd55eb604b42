@@ -1,0 +1,63 @@
+packages/jest-orchestrator/src/commands/assign.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-95
+packages/jest-orchestrator/src/commands/merge-timing.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-92
+packages/jest-orchestrator/src/core/types.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-170
+packages/jest-orchestrator/src/core/ckk-algorithm.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-149
+packages/jest-orchestrator/src/core/index.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-8
+packages/jest-orchestrator/src/core/assign.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-263
+packages/jest-orchestrator/README.md
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-121
+packages/jest-orchestrator/src/core/timing-store.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-95
+packages/jest-orchestrator/src/index.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-11
+packages/jest-orchestrator/src/jest-runner/selection-shim.js
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-128
+packages/jest-orchestrator/src/core/lpt-algorithm.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-33
+packages/jest-orchestrator/src/core/constants.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-2
+packages/jest-orchestrator/src/core/runner.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-260
+packages/jest-orchestrator/src/commands/discover.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-60
+packages/jest-orchestrator/src/commands/annotate.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-151
+packages/jest-orchestrator/__tests__/core.test.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-255
+packages/jest-orchestrator/bin/run.js
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-5
+packages/jest-orchestrator/src/commands/run-shard.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-89
+packages/jest-orchestrator/src/core/discovery.ts
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-213
+packages/jest-orchestrator/tsconfig.json
+  s_5809024f6f3f29::t_195bb4cb9f5874 1-24
+packages/jest-orchestrator/package.json
+  s_5809024f6f3f29::t_5e74d3b0000317 1-86
+openspec/changes/add-jest-orchestrator/tasks.md
+  s_5809024f6f3f29::t_7117a6aa8fca8b 3-5
+bun.lock
+  s_5809024f6f3f29::t_df097966128038 19-34,48-109,112-119,158-163,168-217,222-223,230-231,290-315,318-369,380-381,388-397,400-401,408-423,428-429,438-443,452-455,462-465,468-469,474-475,478-481,488-491,498-503,508-509,512-513,526-533,538-539,550-551,554-555,560-563,566-571,578-579,584-585,594-603,608-659,662-667,692-693,696-697,710-715,720-721,734-737,740-750,772-773,776-777,792-795,798-801,806-807,810-813,838-841,846-847,850-851,854-855,858-859,862-865,868-869,872-873,878-879,884-885,900-901,910-917,930-939,942-961,970-971,974-975,982-1001,1012-1013,1016-1017,1022-1027,1030-1035,1040-1047,1066-1071,1076-1083,1089-1124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fe5454a4df4903ab41a82437c140cd55eb604b42",
+  "prompts": {},
+  "sessions": {
+    "s_5809024f6f3f29": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0acb2-9c09-75a1-a7a9-28eb8ed0294e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
