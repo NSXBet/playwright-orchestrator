@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup
         uses: ./.github/actions/setup
@@ -21,10 +23,30 @@ jobs:
         run: bun run format:check
 
       - name: Lint
-        run: bun run lint
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+            bun run lint -- --filter="...[origin/${BASE_REF}...HEAD]"
+          else
+            bun run lint
+          fi
 
       - name: Typecheck
-        run: bun run typecheck
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+            bun run typecheck -- --filter="...[origin/${BASE_REF}...HEAD]"
+          else
+            bun run typecheck
+          fi
 
   test:
     name: Test
@@ -32,39 +54,100 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup
         uses: ./.github/actions/setup
 
       - name: Test
-        run: bun test
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+            bunx turbo run test --filter="...[origin/${BASE_REF}...HEAD]"
+          else
+            bun run test
+          fi
 
   build:
     name: Build
     runs-on: ubuntu-24.04
+    outputs:
+      orchestrator-affected: ${{ steps.affected.outputs.orchestrator-affected }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup
         uses: ./.github/actions/setup
 
+      - name: Detect affected package
+        id: affected
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "orchestrator-affected=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+          FILTER="...[origin/${BASE_REF}...HEAD]"
+          bunx turbo run build --filter="$FILTER" --dry-run=json > affected.json
+
+          if jq -e 'any(.tasks[]; .taskId == "@nsxbet/playwright-orchestrator#build" and .command != "<NONEXISTENT>")' affected.json > /dev/null; then
+            echo "orchestrator-affected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "orchestrator-affected=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build
-        run: bun run build
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+            bun run build -- --filter="...[origin/${BASE_REF}...HEAD]"
+          else
+            bun run build
+          fi
 
   test-publish:
     name: Test Publish
     runs-on: ubuntu-24.04
     needs: [build]
+    if: github.event_name != 'pull_request' || needs.build.outputs.orchestrator-affected == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup
         uses: ./.github/actions/setup
 
       - name: Build
-        run: bun run build
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+            bun run build -- --filter="...[origin/${BASE_REF}...HEAD]"
+          else
+            bun run build
+          fi
 
       - name: Start Verdaccio
         run: |
