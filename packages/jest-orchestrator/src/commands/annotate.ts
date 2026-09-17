@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import { Command, Flags } from "@oclif/core";
-import type { JestJsonReport } from "../core/types.js";
+import type { AssignResult, JestJsonReport } from "../core/types.js";
 
 /**
  * Convert a Jest JSON report into GitHub Actions annotations
@@ -48,6 +48,51 @@ function sanitize(text: string): string {
   return text.replaceAll(/[\r\n]+/g, " ").replaceAll("|", "\\|");
 }
 
+function selectionKey(file: string, fullName: string): string {
+  return JSON.stringify([file.replaceAll("\\", "/"), fullName]);
+}
+
+export function selectedTestsForShard(assignment: AssignResult, shard: number): Set<string> {
+  const plan = assignment.shards.find((candidate) => candidate.shard === shard);
+  if (!plan) {
+    throw new Error(
+      `shard ${shard} is not present in assignment (have: ${assignment.shards.map((s) => s.shard).join(", ")})`,
+    );
+  }
+  return new Set(plan.selection.map((test) => selectionKey(test.file, test.fullName)));
+}
+
+export function summarizeJestReport(
+  report: JestJsonReport,
+  selected?: ReadonlySet<string>,
+): {
+  passed: number;
+  failed: number;
+  skipped: number;
+  notSelected: number;
+} {
+  let passed = 0;
+  let failed = 0;
+  let skipped = 0;
+  let notSelected = 0;
+  for (const suite of report.testResults) {
+    for (const assertion of suite.assertionResults) {
+      if (assertion.status === "passed") {
+        passed++;
+      } else if (assertion.status === "pending" || assertion.status === "todo") {
+        if (selected && !selected.has(selectionKey(suite.name, assertion.fullName))) {
+          notSelected++;
+        } else {
+          skipped++;
+        }
+      } else {
+        failed++;
+      }
+    }
+  }
+  return { passed, failed, skipped, notSelected };
+}
+
 export default class Annotate extends Command {
   static override description =
     "Convert a Jest JSON report into GitHub Actions annotations and a job summary (run-shard --report-output file)";
@@ -67,46 +112,43 @@ export default class Annotate extends Command {
     shard: Flags.string({
       description: "Shard label shown in the summary heading",
     }),
+    assignment: Flags.string({
+      description: "Assignment JSON used for this shard; classifies filtered tests accurately",
+    }),
   };
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Annotate);
     const report = JSON.parse(fs.readFileSync(flags.report, "utf8")) as JestJsonReport;
+    if (flags.assignment && flags.shard === undefined) {
+      this.error("--shard is required when --assignment is provided");
+    }
+    const shard = Number(flags.shard);
+    if (flags.assignment && (!Number.isInteger(shard) || shard < 1)) {
+      this.error("--shard must be a positive integer when --assignment is provided");
+    }
+    const selected = flags.assignment
+      ? selectedTestsForShard(
+          JSON.parse(fs.readFileSync(flags.assignment, "utf8")) as AssignResult,
+          shard,
+        )
+      : undefined;
+    const { passed, failed, skipped, notSelected } = summarizeJestReport(report, selected);
 
     const rows: string[] = [];
-    let passed = 0;
-    let failed = 0;
-    let skipped = 0;
-    let notSelected = 0;
-
     for (const suite of report.testResults) {
       const absFile = suite.name;
-      // Suite-level 'skipped' means NOTHING ran in this file: either the
-      // whole file is outside the pattern-missed selection or the entire
-      // suite is author-skipped. Those pendings are 'not selected', not
-      // author skips. Inside a 'focused' suite, a pending is a
-      // pattern-missed test; author test.skip is indistinguishable from
-      // pattern-missed per row, so both are 'not executed here'.
-      const suiteRan = suite.status !== "skipped";
       for (const a of suite.assertionResults) {
-        if (a.status === "passed") {
-          passed++;
-          continue;
-        }
+        const isSelected = !selected || selected.has(selectionKey(suite.name, a.fullName));
         if (a.status === "todo") {
-          skipped++;
-          rows.push(`| ⊘ todo | \`${a.fullName}\` | author-declared todo |`);
-          continue;
-        }
-        if (a.status === "pending") {
-          if (suiteRan && suite.status === "focused") {
-            notSelected++;
-          } else {
-            skipped++;
+          if (isSelected) {
+            rows.push(`| ⊘ todo | \`${a.fullName}\` | author-declared todo |`);
           }
           continue;
         }
-        failed++;
+        if (a.status === "passed" || a.status === "pending") {
+          continue;
+        }
         const msg = firstMessage(a.failureMessages ?? []);
         // Primary: jest's own location (needs --testLocationInResults,
         // which run-shard always passes). Fallback: best stack frame.
@@ -130,14 +172,14 @@ export default class Annotate extends Command {
         `|--------|------|---------|`,
         ...rows,
         "",
-        `**${passed} passed**, ${failed} failed, ${skipped} skipped/todo, ${notSelected} not selected in this shard, ${total} total`,
+        `**${passed} passed**, ${failed} failed, ${skipped} skipped/todo${notSelected > 0 ? `, ${notSelected} not selected` : ""}, ${total} total`,
         "",
       ].join("\n");
       fs.appendFileSync(flags["summary-append"], summary);
     }
 
     this.log(
-      `Annotated: ${passed} passed, ${failed} failed, ${skipped} skipped/todo, ${notSelected} not selected`,
+      `Annotated: ${passed} passed, ${failed} failed, ${skipped} skipped/todo${notSelected > 0 ? `, ${notSelected} not selected` : ""}`,
     );
   }
 }

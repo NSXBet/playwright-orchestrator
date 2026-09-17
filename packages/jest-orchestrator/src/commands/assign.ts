@@ -3,6 +3,7 @@ import { Command, Flags } from "@oclif/core";
 import {
   type AssignResult,
   assignShards,
+  createColdStartTests,
   loadTimingDataFile,
   type TestWithDuration,
 } from "../core/index.js";
@@ -56,12 +57,14 @@ export default class Assign extends Command {
     const manifest = loadManifest(flags.manifest);
     const timings = flags.timings ? loadTimingDataFile(flags.timings) : null;
 
-    const withDurations: TestWithDuration[] = manifest.tests.map((t) => ({
-      project: t.project,
-      file: t.file,
-      fullName: t.fullName,
-      duration: 0,
-    }));
+    const withDurations: TestWithDuration[] = createColdStartTests(
+      manifest.tests.map((t) => ({
+        project: t.project,
+        file: t.file,
+        fullName: t.fullName,
+        duration: 0,
+      })),
+    );
 
     const result: AssignResult = assignShards({
       tests: withDurations,

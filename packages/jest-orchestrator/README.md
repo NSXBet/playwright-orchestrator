@@ -41,13 +41,23 @@ test level (optional): login.spec.ts tests → can spread across shards 1–4
 Use `--level test` only when splitting a file is more important than keeping
 its tests together.
 
+### Duration Estimates
+
+For a test with no timing record, both assignment levels use the same fallback
+chain: its own historical duration, the average of known tests in the same
+file, the global average of known tests, then **10 seconds** when no usable
+history exists. This keeps a new test from distorting a warm shard plan while
+still providing a deterministic cold-start estimate.
+
 ### Exact Test Selection
 
 Jest has no equivalent to Playwright's `--test-list`. For test-level plans, the
 orchestrator loads a `setupFilesAfterEnv` shim that uses exact `(file,
 fullName)` allowlist membership, not regex matching. Unassigned tests are
 marked skipped before execution and a bidirectional post-run check fails if a
-selected test is missed or an unselected one runs.
+selected test is missed or an unselected one runs. When generating a GitHub
+summary with `annotate`, pass `--assignment` and `--shard` so skipped tests are
+accurately distinguished from tests selected for another shard.
 
 That means names such as `should login`, `should login with SSO`, `Should
 Login`, `regex \\d+`, `$100`, and `A | B` remain distinct and safe.

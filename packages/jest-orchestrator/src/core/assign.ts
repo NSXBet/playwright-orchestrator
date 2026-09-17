@@ -4,8 +4,17 @@ import { assignWithLPT } from "./lpt-algorithm.js";
 import type { AssignResult, ShardPlan, TestWithDuration, TimingData } from "./types.js";
 import { DEFAULT_PROJECT_NAME, identityFromKey, identityKey } from "./types.js";
 
-/** Default duration for tests with no history (30s). */
-export const DEFAULT_TEST_DURATION = 30000;
+/** Default duration for Jest tests with no usable timing history (10s). */
+export const DEFAULT_TEST_DURATION = 10000;
+
+/**
+ * Create scheduling inputs for discovery results that have no measured duration.
+ * Kept separate from `assignShards`: callers with measured inputs may legitimately
+ * use a zero duration, while a CLI cold start must receive an estimate.
+ */
+export function createColdStartTests<T extends TestWithDuration>(tests: T[]): T[] {
+  return tests.map((test) => ({ ...test, duration: DEFAULT_TEST_DURATION }));
+}
 
 export interface AssignOptions {
   tests: TestWithDuration[];
@@ -29,9 +38,9 @@ export interface AssignOptions {
 function estimateDuration(timings: TimingData, id: TestWithDuration): number {
   // The store is advisory data: corrupt keys and non-finite durations are
   // skipped everywhere so one bad entry cannot poison the whole plan.
-  const known = Object.values(timings.projects)
-    .flatMap((p) => Object.values(p.files))
-    .filter((d) => Number.isFinite(d.duration) && d.duration >= 0);
+  const known = Object.values(timings.projects[id.project]?.files ?? {}).filter(
+    (duration) => Number.isFinite(duration.duration) && duration.duration >= 0,
+  );
   if (known.length === 0) return DEFAULT_TEST_DURATION;
 
   const own = getHistoricalDuration(timings, id);
@@ -39,20 +48,22 @@ function estimateDuration(timings: TimingData, id: TestWithDuration): number {
 
   // Same-file average: entries in the store whose decoded file matches.
   const sameFile: number[] = [];
-  for (const project of Object.values(timings.projects)) {
-    for (const [key, data] of Object.entries(project.files)) {
-      try {
-        if (
-          identityFromKey(key).file === id.file &&
-          Number.isFinite(data.duration) &&
-          data.duration >= 0
-        ) {
-          sameFile.push(data.duration);
-        }
-      } catch {
-        // unparseable key: ignore entry
+  for (const [key, data] of Object.entries(timings.projects[id.project]?.files ?? {})) {
+    try {
+      if (
+        identityFromKey(key).file === id.file &&
+        Number.isFinite(data.duration) &&
+        data.duration >= 0
+      ) {
+        sameFile.push(data.duration);
       }
+    } catch {
+      // unparseable key: ignore entry
     }
+  }
+
+  if (sameFile.length > 0) {
+    return Math.round(sameFile.reduce((sum, duration) => sum + duration, 0) / sameFile.length);
   }
 
   // Global average.
@@ -75,12 +86,11 @@ export function assignShards(opts: AssignOptions): AssignResult {
 function assignFileLevel(opts: AssignOptions): AssignResult {
   const { tests, shards } = opts;
 
-  // Group tests by file, filling missing per-test durations first.
+  // Group tests by file, filling missing per-test durations with the same
+  // exact-test -> same-file -> global -> default chain as test-level plans.
   const byFile = new Map<string, { file: string; tests: TestWithDuration[]; duration: number }>();
   for (const t of tests) {
-    const duration = opts.timings
-      ? (getHistoricalDuration(opts.timings, t) ?? DEFAULT_TEST_DURATION)
-      : t.duration;
+    const duration = opts.timings ? estimateDuration(opts.timings, t) : t.duration;
     let entry = byFile.get(t.file);
     if (!entry) {
       entry = { file: t.file, tests: [], duration: 0 };

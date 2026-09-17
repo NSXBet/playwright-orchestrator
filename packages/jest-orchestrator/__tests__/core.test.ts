@@ -1,9 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { assignShards, verifyShardRun } from "../src/core/assign.js";
+import {
+  assignShards,
+  createColdStartTests,
+  DEFAULT_TEST_DURATION,
+  verifyShardRun,
+} from "../src/core/assign.js";
+import { selectedTestsForShard, summarizeJestReport } from "../src/commands/annotate.js";
 import { assignWithCKK } from "../src/core/ckk-algorithm.js";
 import { assignWithLPT } from "../src/core/lpt-algorithm.js";
 import { mergeTimingData, pruneTimingData } from "../src/core/timing-store.js";
-import type { ShardTimingArtifact, TestWithDuration } from "../src/core/types.js";
+import type {
+  AssignResult,
+  JestJsonReport,
+  ShardTimingArtifact,
+  TestWithDuration,
+} from "../src/core/types.js";
 import { identityFromKey, identityKey } from "../src/core/types.js";
 
 describe("identity", () => {
@@ -182,11 +193,159 @@ describe("assignShards", () => {
     expect(total).toBe(9000);
   });
 
+  test("cold-start inputs use the default estimate without changing source data", () => {
+    const coldStart = createColdStartTests(tests);
+    expect(coldStart.map((test) => test.duration)).toEqual([
+      DEFAULT_TEST_DURATION,
+      DEFAULT_TEST_DURATION,
+      DEFAULT_TEST_DURATION,
+    ]);
+    expect(tests.map((test) => test.duration)).toEqual([1000, 5000, 3000]);
+
+    const result = assignShards({ tests: coldStart, timings: null, shards: 2 });
+    const total = result.shards.reduce((sum, shard) => sum + shard.expectedDuration, 0);
+    expect(total).toBe(tests.length * DEFAULT_TEST_DURATION);
+    expect(result.shards.every((shard) => shard.expectedDuration > 0)).toBe(true);
+  });
+
+  test("file-level assignment falls back to 10 seconds for an empty timing store", () => {
+    const result = assignShards({
+      tests: [{ project: "p", file: "new.ts", fullName: "new", duration: 0 }],
+      timings: mergeTimingData(null, []),
+      shards: 1,
+      level: "file",
+    });
+    expect(result.shards[0]?.expectedDuration).toBe(DEFAULT_TEST_DURATION);
+  });
+
+  test("file-level assignment keeps same-file estimates within the Jest project", () => {
+    const timings = mergeTimingData(null, [
+      {
+        project: "p1",
+        shard: 1,
+        measurements: [{ file: "shared.ts", fullName: "known", duration: 1000 }],
+      },
+      {
+        project: "p2",
+        shard: 1,
+        measurements: [{ file: "shared.ts", fullName: "known", duration: 9000 }],
+      },
+    ]);
+    const result = assignShards({
+      tests: [{ project: "p1", file: "shared.ts", fullName: "new", duration: 0 }],
+      timings,
+      shards: 1,
+      level: "file",
+    });
+    expect(result.shards[0]?.expectedDuration).toBe(1000);
+  });
+
+  test("file-level assignment estimates new tests from their file before global history", () => {
+    const timings = mergeTimingData(null, [
+      {
+        project: "p",
+        shard: 1,
+        measurements: [
+          { file: "known.ts", fullName: "fast", duration: 1000 },
+          { file: "known.ts", fullName: "slow", duration: 3000 },
+          { file: "other.ts", fullName: "very slow", duration: 9000 },
+        ],
+      },
+    ]);
+    const result = assignShards({
+      tests: [
+        { project: "p", file: "known.ts", fullName: "fast", duration: 0 },
+        { project: "p", file: "known.ts", fullName: "new", duration: 0 },
+        { project: "p", file: "unseen.ts", fullName: "new", duration: 0 },
+      ],
+      timings,
+      shards: 1,
+      level: "file",
+    });
+
+    // Exact 1s + same-file average 2s + global average 13s / 3 = 4⅓s.
+    expect(result.shards[0]?.expectedDuration).toBe(7333);
+  });
+
   test("duplicate fullNames in same file collapse into one unit but restore count", () => {
     const dup = [...tests, { project: "p", file: "a.ts", fullName: "one", duration: 0 }];
     const result = assignShards({ tests: dup, timings: null, shards: 2 });
     const flat = result.shards.flatMap((s) => s.testIds);
     expect(flat).toHaveLength(4);
+  });
+});
+
+describe("Jest report annotations", () => {
+  test("separates selected skips from tests filtered out of a test-level shard", () => {
+    const file = "/repo/example.spec.ts";
+    const assignment: AssignResult = {
+      shards: [
+        {
+          shard: 1,
+          files: [file],
+          selection: [
+            { file, fullName: "selected skip" },
+            { file, fullName: "selected todo" },
+            { file, fullName: "selected pass" },
+          ],
+          testIds: [],
+          expectedDuration: 0,
+        },
+      ],
+      unassigned: [],
+      totalTests: 4,
+      estimatedSavings: null,
+      level: "test",
+    };
+    const report: JestJsonReport = {
+      numTotalTests: 4,
+      numPassedTests: 1,
+      numFailedTests: 0,
+      numPendingTests: 2,
+      numTodoTests: 1,
+      success: true,
+      testResults: [
+        {
+          name: file,
+          status: "focused",
+          startTime: 0,
+          endTime: 0,
+          assertionResults: [
+            {
+              ancestorTitles: [],
+              fullName: "selected skip",
+              title: "selected skip",
+              status: "pending",
+            },
+            {
+              ancestorTitles: [],
+              fullName: "selected todo",
+              title: "selected todo",
+              status: "todo",
+            },
+            {
+              ancestorTitles: [],
+              fullName: "selected pass",
+              title: "selected pass",
+              status: "passed",
+            },
+            {
+              ancestorTitles: [],
+              fullName: "other shard",
+              title: "other shard",
+              status: "pending",
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(summarizeJestReport(report, selectedTestsForShard(assignment, 1))).toEqual({
+      passed: 1,
+      failed: 0,
+      skipped: 2,
+      notSelected: 1,
+    });
   });
 });
 
