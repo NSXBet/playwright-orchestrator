@@ -1,5 +1,13 @@
 # @nsxbet/playwright-orchestrator
 
+## 2.0.1
+
+### Patch Changes
+
+- [#59](https://github.com/NSXBet/test-orchestrator/pull/59) [`a4d80af`](https://github.com/NSXBet/test-orchestrator/commit/a4d80af1d42f529cb9e6e502ba98b12564b72759) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Handle valid empty shard plans as no-ops and exclude skipped tests from timing measurements so exact test assignments remain intact.
+
+- [#59](https://github.com/NSXBet/test-orchestrator/pull/59) [`a4d80af`](https://github.com/NSXBet/test-orchestrator/commit/a4d80af1d42f529cb9e6e502ba98b12564b72759) Thanks [@gtkatakura](https://github.com/gtkatakura)! - Format human-facing durations consistently as milliseconds, seconds, or composed minute/hour units, and improve E2E lifecycle summary tables.
+
 ## 2.0.0
 
 ### Major Changes
