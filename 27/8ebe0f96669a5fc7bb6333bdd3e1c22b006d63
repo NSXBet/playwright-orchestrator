@@ -1,0 +1,20 @@
+.github/workflows/e2e-monorepo.yml
+  s_a366f4bba4f921::t_6825861852f5cb 856
+  s_a366f4bba4f921::t_8604d1fde64275 757-765,778-779,781-799,822-824,840-842,848-849,851-852
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "278ebe0f96669a5fc7bb6333bdd3e1c22b006d63",
+  "prompts": {},
+  "sessions": {
+    "s_a366f4bba4f921": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ad84-c2c2-7250-9966-d3f075c70c8d",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
