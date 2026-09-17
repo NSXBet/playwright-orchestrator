@@ -37,10 +37,13 @@ import { something } from './module';
 ## Architecture
 
 ```
-src/
-├── commands/     # CLI commands (oclif)
-├── core/         # Algorithms and utilities
-└── index.ts      # Package entry point
+packages/playwright-orchestrator/
+├── src/
+│   ├── commands/ # CLI commands (oclif)
+│   ├── core/     # Algorithms and utilities
+│   └── index.ts  # Package entry point
+├── __tests__/    # Bun unit tests
+└── bin/          # CLI executable
 ```
 
 **Key Principles:**
@@ -62,11 +65,11 @@ ALL components MUST use `project.testDir` (not `config.rootDir`) for path resolu
 
 **NEVER fall back to `process.cwd()` or `config.rootDir`** - this causes path mismatch bugs when `testDir` is a subdirectory (e.g., `testDir: './src/test/e2e'`).
 
-**Test ID generation** uses `buildTestId` from `src/core/types.ts`:
+**Test ID generation** uses `buildTestId` from `packages/playwright-orchestrator/src/core/types.ts`:
 - Data comes pre-processed from Playwright's `--list` JSON or report JSON
 - titlePath already excludes project name and filename
 
-**Test-list format conversion** uses `toTestListFormat` / `toTestListFile` from `src/core/test-id.ts`:
+**Test-list format conversion** uses `toTestListFormat` / `toTestListFile` from `packages/playwright-orchestrator/src/core/test-id.ts`:
 - Converts internal `::` format to Playwright's ` › ` format
 - Prepends `testDirPrefix` (relative path from rootDir to testDir) for monorepo support
 
@@ -207,7 +210,7 @@ In monorepos, the orchestrator generates test-list files with rootDir-relative p
 
 ### Adding a CLI Command
 
-1. Create `src/commands/my-command.ts`
+1. Create `packages/playwright-orchestrator/src/commands/my-command.ts`
 2. Follow oclif pattern:
 
 ```typescript
@@ -233,9 +236,9 @@ export default class MyCommand extends Command {
 
 ### Adding Core Functionality
 
-1. Create `src/core/my-module.ts`
-2. Export from `src/core/index.ts`
-3. Add tests in `__tests__/my-module.test.ts`
+1. Create `packages/playwright-orchestrator/src/core/my-module.ts`
+2. Export from `packages/playwright-orchestrator/src/core/index.ts`
+3. Add tests in `packages/playwright-orchestrator/__tests__/my-module.test.ts`
 
 ### Running Quality Checks
 
@@ -270,7 +273,7 @@ When adding features or making significant changes:
 
 ```bash
 bun test                    # All tests
-bun test __tests__/foo.ts   # Specific file
+bun test packages/playwright-orchestrator/__tests__/foo.ts   # Specific file
 ```
 
 ### Local E2E Testing
@@ -447,6 +450,7 @@ Use `if: success() || failure()` instead of `always()`:
 |------|---------|
 | `openspec/project.md` | Project conventions |
 | `openspec/changes/` | Active change proposals |
-| `biome.json` | Linter config |
-| `tsconfig.json` | TypeScript config |
+| `packages/playwright-orchestrator/tsconfig.json` | Package TypeScript config |
+| `turbo.json` | Workspace task graph |
+| `biome.json` | Workspace linter config |
 | `Makefile` | Common commands |

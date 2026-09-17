@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "src/**"
+      - "packages/playwright-orchestrator/**"
       - "examples/monorepo/**"
       - ".github/workflows/e2e-monorepo.yml"
       - ".github/actions/**"
@@ -31,13 +31,14 @@ jobs:
         run: bun run build
 
       - name: Create tarball
+        working-directory: packages/playwright-orchestrator
         run: npm pack
 
       - name: Upload tarball artifact
         uses: actions/upload-artifact@v4
         with:
           name: package-tarball
-          path: "*.tgz"
+          path: "packages/playwright-orchestrator/*.tgz"
           retention-days: 1
 
   # Job 2: Orchestrate tests using the real action
@@ -53,9 +54,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: package-tarball
+          path: packages/playwright-orchestrator
 
       - name: Install CLI globally from tarball
-        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+        run: npm install -g ./packages/playwright-orchestrator/nsxbet-playwright-orchestrator-*.tgz
 
       - name: Install monorepo dependencies
         working-directory: examples/monorepo/apps/web
@@ -106,9 +108,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: package-tarball
+          path: packages/playwright-orchestrator
 
       - name: Install CLI globally from tarball
-        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+        run: npm install -g ./packages/playwright-orchestrator/nsxbet-playwright-orchestrator-*.tgz
 
       - name: Install monorepo dependencies
         working-directory: examples/monorepo/apps/web
@@ -288,6 +291,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: package-tarball
+          path: packages/playwright-orchestrator
 
       - name: Install monorepo dependencies (for Playwright merge-reports)
         working-directory: examples/monorepo/apps/web
@@ -385,9 +389,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: package-tarball
+          path: packages/playwright-orchestrator
 
       - name: Install CLI globally from tarball
-        run: npm install -g ./nsxbet-playwright-orchestrator-*.tgz
+        run: npm install -g ./packages/playwright-orchestrator/nsxbet-playwright-orchestrator-*.tgz
 
       - name: Download timing artifacts
         uses: actions/download-artifact@v4

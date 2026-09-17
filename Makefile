@@ -5,17 +5,17 @@ help:
 	@echo "Available targets:"
 	@echo ""
 	@echo "Development:"
-	@echo "  install      - Install dependencies"
-	@echo "  lint         - Run Biome linter"
-	@echo "  lint-fix     - Run Biome linter with auto-fix"
-	@echo "  format       - Format code with Biome"
+	@echo "  install      - Install workspace dependencies"
+	@echo "  lint         - Run workspace linter"
+	@echo "  lint-fix     - Run workspace linter with auto-fix"
+	@echo "  format       - Format package code"
 	@echo "  typecheck    - Run TypeScript type checking"
 	@echo "  test         - Run unit tests"
-	@echo "  build        - Build the project"
+	@echo "  build        - Build workspace packages"
 	@echo "  clean        - Remove build artifacts"
 	@echo ""
 	@echo "Local Testing (via Act):"
-	@echo "  act-test     - Run CI workflow locally (lint, test, build)"
+	@echo "  act-test     - Run CI workflow locally"
 	@echo "  act-publish  - Run publish test locally (Verdaccio)"
 	@echo "  act-e2e      - Run E2E example workflow locally"
 	@echo "  act-e2e-monorepo - Run E2E monorepo workflow locally"
@@ -37,18 +37,16 @@ format:
 	bun run format
 
 typecheck:
-	bun run typecheck
+	bun run type-check
 
 test:
-	bun test
+	bun run test
 
 build:
 	bun run build
 
 clean:
-	rm -rf dist
-	rm -rf node_modules
-	rm -rf .timing-cache
+	rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo node_modules .turbo .timing-cache
 
 # Install example project dependencies
 example-install:
@@ -56,8 +54,9 @@ example-install:
 
 # Demo assign command with example tests
 assign-demo: build
+	cd examples/basic && npx playwright test --list --reporter=json > test-list.json
 	@echo "=== Test Assignment Demo (3 shards) ==="
-	./bin/run.js assign --test-dir ./examples/basic/tests --shards 3 --level test --glob-pattern "**/*.spec.ts" --output-format text --verbose
+	./packages/playwright-orchestrator/bin/run.js assign --test-list ./examples/basic/test-list.json --shards 3 --output-format text --verbose
 
 # Run GitHub Actions locally with Act
 # Requires: https://github.com/nektos/act

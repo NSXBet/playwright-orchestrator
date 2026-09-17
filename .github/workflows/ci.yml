@@ -78,6 +78,7 @@ jobs:
 
       - name: Publish to Verdaccio
         run: |
+          cd packages/playwright-orchestrator
           npm pkg set version=0.0.0-test.${{ github.run_id }}
           npm pkg delete publishConfig
           npm publish --registry http://localhost:4873

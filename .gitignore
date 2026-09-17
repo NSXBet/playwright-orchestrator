@@ -6,7 +6,6 @@ dist/
 tsconfig.tsbuildinfo
 
 # Bun
-bun.lock
 bun.lockb
 
 # IDE

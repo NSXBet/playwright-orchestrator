@@ -1,0 +1,81 @@
+{
+  "name": "@nsxbet/playwright-orchestrator",
+  "version": "2.0.0",
+  "description": "Intelligent Playwright test distribution across CI shards using historical timing data",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "core": [
+        "./dist/core/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "require": "./dist/core/index.js"
+    }
+  },
+  "bin": {
+    "playwright-orchestrator": "./bin/run.js"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "oclif": {
+    "bin": "playwright-orchestrator",
+    "dirname": "playwright-orchestrator",
+    "commands": "./dist/commands",
+    "topicSeparator": " "
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "clean": "rm -rf dist",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "type-check": "tsc --noEmit",
+    "test": "bun test",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "playwright",
+    "testing",
+    "sharding",
+    "ci",
+    "orchestrator",
+    "parallel"
+  ],
+  "author": "NSXBet",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NSXBet/playwright-orchestrator.git",
+    "directory": "packages/playwright-orchestrator"
+  },
+  "bugs": {
+    "url": "https://github.com/NSXBet/playwright-orchestrator/issues"
+  },
+  "homepage": "https://github.com/NSXBet/playwright-orchestrator#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@oclif/core": "4.8.0",
+    "glob": "11.0.2"
+  }
+}
