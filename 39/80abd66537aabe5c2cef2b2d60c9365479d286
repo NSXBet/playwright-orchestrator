@@ -1,0 +1,56 @@
+packages/jest-orchestrator/src/core/discovery.ts
+  s_a366f4bba4f921::t_e32e85cdfc4872 14
+  s_a366f4bba4f921::t_cda834e6477fcb 126
+packages/playwright-orchestrator/src/core/format-duration.ts
+  s_a366f4bba4f921::t_bb1293c17c1dec 1-26
+packages/jest-orchestrator/src/core/index.ts
+  s_a366f4bba4f921::t_fe52cbe132b153 5
+packages/playwright-orchestrator/src/core/index.ts
+  s_a366f4bba4f921::t_2a50f88bbe7c3f 3
+scripts/format-duration.sh
+  s_a366f4bba4f921::t_b6825459ad8e43 39
+  s_a366f4bba4f921::t_404f5cf0ad840c 1-38,40-41
+packages/jest-orchestrator/src/commands/assign.ts
+  s_a366f4bba4f921::t_341be2fa9a6d93 7,81
+packages/jest-orchestrator/__tests__/core.test.ts
+  s_a366f4bba4f921::t_cfb3812c6fb32b 23-42,57-58
+  s_a366f4bba4f921::t_8948dc7837150e 11,13,43-56
+  s_a366f4bba4f921::t_5344419a1e98ce 8
+  s_a366f4bba4f921::t_cb862d01c26b49 59
+packages/playwright-orchestrator/__tests__/format-duration.test.ts
+  s_a366f4bba4f921::t_2b6e294bfec817 1-25
+packages/jest-orchestrator/src/core/runner.ts
+  s_a366f4bba4f921::t_c1b9c85d770f09 6,227
+.changeset/tiny-onions-relax.md
+  s_a366f4bba4f921::t_2207a540176610 1,4
+  s_a366f4bba4f921::t_9e36996762738f 2-3,5-6
+packages/jest-orchestrator/src/core/format-duration.ts
+  s_a366f4bba4f921::t_74d65e23f9497e 1-26
+.github/workflows/e2e-monorepo.yml
+  s_a366f4bba4f921::t_21f604a668d657 76,83,91,135,143,155,161,169,201,209,225,247,271,280,290,325,338,348,393,416,428,433,442,450,474,480,511,515,521,549,557,606,613,641,648,655,716,723,732
+  s_a366f4bba4f921::t_9706a84358eb69 871
+  s_a366f4bba4f921::t_0a4feb02e9db16 402-409
+  s_a366f4bba4f921::t_d3f400ccf582a1 99,102,121,124-128,665,678,681-684,791,794,834-835,838-840,845,854-855,858-861,867
+.github/workflows/e2e-jest-monorepo.yml
+  s_a366f4bba4f921::t_eedcaf27b9f758 546
+  s_a366f4bba4f921::t_e2120251da030a 86,89,102,109,317,320,333,445,448,459,469,480,483,511-512,517,530-531,536-537
+  s_a366f4bba4f921::t_d770fc1c17c5d1 77,111,149,156,175,189,197,224,310,335,342,379,396,515-516,534-535
+packages/playwright-orchestrator/src/commands/assign.ts
+  s_a366f4bba4f921::t_3cd38ecd228d23 6,136,144,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3980abd66537aabe5c2cef2b2d60c9365479d286",
+  "prompts": {},
+  "sessions": {
+    "s_a366f4bba4f921": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ad84-c2c2-7250-9966-d3f075c70c8d",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
