@@ -8,6 +8,10 @@ tsconfig.tsbuildinfo
 # Bun
 bun.lockb
 
+# Workspace tooling
+.turbo/
+.build/
+
 # IDE
 .idea/
 .vscode/

@@ -4,8 +4,8 @@ This repository is the Bun/Turborepo workspace for NSXBet's Playwright test-dist
 
 ## Packages
 
-| Package | Description |
-| --- | --- |
+| Package                                                                           | Description                                                                 |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | [`@nsxbet/playwright-orchestrator`](./packages/playwright-orchestrator/README.md) | Distributes Playwright tests across CI shards using historical timing data. |
 
 ## Development

@@ -1,89 +1,102 @@
-.PHONY: install lint lint-fix format typecheck test build clean act-test act-publish act-e2e act-e2e-monorepo example-install assign-demo help
+.DEFAULT_GOAL := help
 
-# Default target
-help:
-	@echo "Available targets:"
-	@echo ""
-	@echo "Development:"
-	@echo "  install      - Install workspace dependencies"
-	@echo "  lint         - Run workspace linter"
-	@echo "  lint-fix     - Run workspace linter with auto-fix"
-	@echo "  format       - Format package code"
-	@echo "  typecheck    - Run TypeScript type checking"
-	@echo "  test         - Run unit tests"
-	@echo "  build        - Build workspace packages"
-	@echo "  clean        - Remove build artifacts"
-	@echo ""
-	@echo "Local Testing (via Act):"
-	@echo "  act-test     - Run CI workflow locally"
-	@echo "  act-publish  - Run publish test locally (Verdaccio)"
-	@echo "  act-e2e      - Run E2E example workflow locally"
-	@echo "  act-e2e-monorepo - Run E2E monorepo workflow locally"
-	@echo ""
-	@echo "Examples:"
-	@echo "  example-install - Install example project dependencies"
-	@echo "  assign-demo  - Demo assign command with example tests"
+# ============================================================================
+# HELP
+# ============================================================================
 
-install:
+.PHONY: help
+help: ## Show this help message
+	@echo ""
+	@echo "Usage: make <target>"
+	@echo ""
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# ============================================================================
+# WORKSPACE VALIDATION
+# ============================================================================
+
+.PHONY: install lint format format-check typecheck test build clean package-dry-run
+install: ## Install workspace dependencies
 	bun install
 
-lint:
+lint: ## Lint workspace packages
 	bun run lint
 
-lint-fix:
-	bun run lint:fix
-
-format:
+format: ## Format repository files
 	bun run format
 
-typecheck:
+format-check: ## Check repository formatting
+	bun run format:check
+
+typecheck: ## Type-check workspace packages
 	bun run type-check
 
-test:
+test: ## Run workspace unit tests
 	bun run test
 
-build:
+build: ## Build workspace packages
 	bun run build
 
-clean:
-	rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo node_modules .turbo .timing-cache
+clean: ## Remove generated workspace artifacts
+	rm -rf node_modules .turbo packages/*/dist packages/*/tsconfig.tsbuildinfo .timing-cache
 
-# Install example project dependencies
-example-install:
+package-dry-run: build ## Inspect the publishable package contents
+	cd packages/playwright-orchestrator && npm pack --dry-run
+
+# ============================================================================
+# EXAMPLES
+# ============================================================================
+
+.PHONY: example-install assign-demo
+example-install: ## Install basic-example dependencies
 	cd examples/basic && npm install && npx playwright install chromium
 
-# Demo assign command with example tests
-assign-demo: build
+assign-demo: build ## Demo assignment using the basic example test list
 	cd examples/basic && npx playwright test --list --reporter=json > test-list.json
 	@echo "=== Test Assignment Demo (3 shards) ==="
 	./packages/playwright-orchestrator/bin/run.js assign --test-list ./examples/basic/test-list.json --shards 3 --output-format text --verbose
 
-# Run GitHub Actions locally with Act
-# Requires: https://github.com/nektos/act
-act-test:
-	@echo "=== Running CI workflow locally with Act ==="
-	act -j lint-and-typecheck --rm
-	act -j test --rm
-	act -j build --rm
-	@echo "=== All CI jobs passed ==="
+# ============================================================================
+# GITHUB ACTIONS LOCAL TESTING (using act)
+# ============================================================================
 
-# Run E2E example workflow locally with Act
-# Note: This runs the full E2E workflow with sharding
-act-e2e:
-	@echo "=== Running E2E example workflow locally with Act ==="
-	act workflow_dispatch -W .github/workflows/e2e-example.yml --rm --artifact-server-path /tmp/act-artifacts
-	@echo "=== E2E workflow complete ==="
+ACT_PLATFORM = -P ubuntu-24.04=catthehacker/ubuntu:act-24.04
+ACT_ARGS = --container-architecture linux/amd64 $(ACT_PLATFORM)
+ACT_DOCKER_HOST = $(shell docker context inspect $$(docker context show) --format '{{ .Endpoints.docker.Host }}' 2>/dev/null)
 
-# Run E2E monorepo workflow locally with Act
-# Tests the monorepo path mismatch scenario
-act-e2e-monorepo:
-	@echo "=== Running E2E monorepo workflow with Act ==="
-	act workflow_dispatch -W .github/workflows/e2e-monorepo.yml --rm --artifact-server-path /tmp/act-artifacts
-	@echo "=== E2E monorepo workflow complete ==="
+act = DOCKER_HOST="$(ACT_DOCKER_HOST)" act
 
-# Run publish test locally with Act
-# Tests that the package can be published and installed correctly
-act-publish:
-	@echo "=== Running publish test with Act ==="
-	act -j test-publish --rm --artifact-server-path /tmp/act-artifacts
-	@echo "=== Publish test complete ==="
+.PHONY: act-install
+act-install: ## Install act (GitHub Actions local runner)
+	@echo "Installing act..."
+	@if command -v brew > /dev/null 2>&1; then \
+		brew install act; \
+	elif command -v curl > /dev/null 2>&1; then \
+		curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash; \
+	else \
+		echo "act is required; install it from https://github.com/nektos/act"; \
+		exit 1; \
+	fi
+
+.PHONY: act-check
+act-check: ## Verify that act and its Docker daemon are available
+	@command -v act > /dev/null 2>&1 || { echo "act is not installed; run 'make act-install'"; exit 1; }
+	@test -n "$(ACT_DOCKER_HOST)" || { echo "Unable to resolve the active Docker context endpoint"; exit 1; }
+	@DOCKER_HOST="$(ACT_DOCKER_HOST)" docker info > /dev/null 2>&1 || { echo "Docker is not running or its active context is unavailable"; exit 1; }
+	@echo "act is installed: $$(act --version) (Docker: $(ACT_DOCKER_HOST))"
+
+.PHONY: act-test
+act-test: act-check ## Run the CI workflow locally
+	$(act) pull_request -W .github/workflows/ci.yml $(ACT_ARGS)
+
+.PHONY: act-e2e
+act-e2e: act-check ## Run the basic E2E workflow locally
+	$(act) workflow_dispatch -W .github/workflows/e2e-example.yml $(ACT_ARGS) --artifact-server-path /tmp/act-artifacts
+
+.PHONY: act-e2e-monorepo
+act-e2e-monorepo: act-check ## Run the monorepo E2E workflow locally
+	$(act) workflow_dispatch -W .github/workflows/e2e-monorepo.yml $(ACT_ARGS) --artifact-server-path /tmp/act-artifacts
+
+.PHONY: act-publish
+act-publish: act-check ## Run Verdaccio publication validation locally
+	$(act) pull_request -W .github/workflows/ci.yml -j test-publish $(ACT_ARGS) --artifact-server-path /tmp/act-artifacts
