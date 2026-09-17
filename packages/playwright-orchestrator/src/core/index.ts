@@ -1,5 +1,6 @@
 export * from "./ckk-algorithm.js";
 export * from "./estimate.js";
+export * from "./format-duration.js";
 export * from "./lpt-algorithm.js";
 export * from "./slugify.js";
 export * from "./test-discovery.js";

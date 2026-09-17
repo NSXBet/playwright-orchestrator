@@ -40,23 +40,35 @@ runs:
         SHARD_INDEX='${{ inputs.shard-index }}'
         TOTAL='${{ inputs.shards }}'
 
-        # Always output fallback args
-        echo "fallback-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
+        # Native fallback is only safe when the orchestrator was unavailable.
+        echo "fallback-args=" >> $GITHUB_OUTPUT
 
         # Check if we have valid test-list files
         if [ -z "$TEST_LIST_FILES" ] || [ "$TEST_LIST_FILES" = "{}" ] || [ "$TEST_LIST_FILES" = "null" ]; then
           echo "::notice::No orchestrator data, using native sharding for shard $SHARD_INDEX/$TOTAL"
+          echo "fallback-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
           echo "has-tests=false" >> $GITHUB_OUTPUT
           echo "test-count=0" >> $GITHUB_OUTPUT
           echo "test-list-file=" >> $GITHUB_OUTPUT
           exit 0
         fi
 
-        # Extract test-list content for this shard (raw string, not JSON array)
+        # An explicit empty value is a valid sparse assignment. A missing key
+        # means the plan is incomplete, so retain the native fallback rather
+        # than silently omitting tests.
+        HAS_SHARD=$(printf '%s' "$TEST_LIST_FILES" | jq -r --arg idx "$SHARD_INDEX" 'has($idx)')
         CONTENT=$(printf '%s' "$TEST_LIST_FILES" | jq -r --arg idx "$SHARD_INDEX" '.[$idx] // ""')
 
         if [ -z "$CONTENT" ]; then
-          echo "::notice::No tests assigned to shard $SHARD_INDEX, using native sharding"
+          if [ "$HAS_SHARD" = "true" ]; then
+            echo "::notice::Shard $SHARD_INDEX has a valid empty assignment; skipping test execution"
+            echo "has-tests=false" >> $GITHUB_OUTPUT
+            echo "test-count=0" >> $GITHUB_OUTPUT
+            echo "test-list-file=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "::notice::Shard $SHARD_INDEX is missing from the assignment, using native sharding"
+          echo "fallback-args=--shard=$SHARD_INDEX/$TOTAL" >> $GITHUB_OUTPUT
           echo "has-tests=false" >> $GITHUB_OUTPUT
           echo "test-count=0" >> $GITHUB_OUTPUT
           echo "test-list-file=" >> $GITHUB_OUTPUT

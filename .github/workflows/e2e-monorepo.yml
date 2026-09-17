@@ -2,6 +2,11 @@ name: E2E Monorepo Test
 
 on:
   workflow_dispatch:
+    inputs:
+      shards:
+        description: Number of shards for lifecycle coverage
+        required: false
+        default: "2"
   pull_request:
     paths:
       - "packages/playwright-orchestrator/**"
@@ -46,8 +51,11 @@ jobs:
     needs: [setup]
     runs-on: ubuntu-24.04
     outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
       test-list-files: ${{ steps.orchestrate.outputs.test-list-files }}
+      expected-durations: ${{ steps.orchestrate.outputs.expected-durations }}
       use-orchestrator: ${{ steps.orchestrate.outputs.use-orchestrator }}
+      assignment: ${{ steps.orchestrate.outputs.assignment }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,33 +73,104 @@ jobs:
           npm install
           npx playwright install chromium
 
-      - name: Generate test list
+      - name: Discover Playwright tests
         working-directory: examples/monorepo/apps/web
         run: |
           npx playwright test --list --reporter=json > test-list.json
           echo "=== Test list generated ==="
           cat test-list.json | jq -r '.suites[].title' || echo "Could not parse suites"
 
+      - name: Create shard matrix
+        id: matrix
+        run: |
+          SHARDS="${{ github.event.inputs.shards || '2' }}"
+          MATRIX=$(seq 1 "$SHARDS" | jq -R . | jq -sc '{shardIndex: .}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
       # Use the REAL orchestrate action
-      - name: Orchestrate tests
+      - name: Create cold-start assignment
         id: orchestrate
         uses: ./.github/actions/orchestrate
         with:
           test-list: examples/monorepo/apps/web/test-list.json
           timing-file: timing-data.json
-          shards: 2
+          shards: ${{ github.event.inputs.shards || '2' }}
 
-      - name: Debug orchestrate output
+      - name: Write cold plan diagnostics
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/format-duration.sh"
+          ASSIGNMENT='${{ steps.orchestrate.outputs.assignment }}'
+          SHARDS="${{ github.event.inputs.shards || '2' }}"
+          DISCOVERED=$(jq '.totalTests' <<< "$ASSIGNMENT")
+          ASSIGNED=$(jq '[.shards[] | length] | add' <<< "$ASSIGNMENT")
+          PLANNED=$(jq '[.expectedDurations[]] | add' <<< "$ASSIGNMENT")
+          {
+            echo "## Playwright cold-to-warm lifecycle"
+            echo ""
+            echo "### 1. Run configuration"
+            echo "- Framework: Playwright"
+            echo "- Assignment level: test with file affinity"
+            echo "- Shards: $SHARDS"
+            echo "- Cold timing-store source: absent (fallback estimates)"
+            echo ""
+            echo "### 2. Cold plan"
+            echo "- Discovered occurrences: $DISCOVERED"
+            echo "- Assigned occurrences: $ASSIGNED"
+            echo "- Expected behavior: fallback estimates, not historical timings"
+            echo ""
+            echo "| Shard | Tests | Expected duration |"
+            echo "| --- | ---: | ---: |"
+            jq -r '(.shards | to_entries[]) as $shard | [$shard.key, ($shard.value | length), (.expectedDurations[$shard.key] // 0)] | @tsv' <<< "$ASSIGNMENT" | while IFS=$'\t' read -r shard tests duration; do
+              printf '| %s | %s | %s |\n' "$shard" "$tests" "$(format_duration "$duration")"
+            done
+            echo ""
+            echo "- Total planned duration: $(format_duration "$PLANNED")"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$DISCOVERED" -eq "$ASSIGNED" ] || {
+            echo "::error::cold plan coverage failed: expected $DISCOVERED discovered occurrences, assigned $ASSIGNED; inspect orchestrate assignment output"
+            exit 1
+          }
+
+      - name: Create sparse empty-shard plan
+        id: sparse
+        uses: ./.github/actions/get-shard
+        with:
+          test-list-files: '{"1":"src/test/e2e/example.spec.ts › Example › selected test", "5":""}'
+          shard-index: 5
+          shards: 5
+
+      - name: Validate sparse empty-shard behavior
+        run: |
+          [ "${{ steps.sparse.outputs.has-tests }}" = "false" ] || {
+            echo "::error::sparse shard 5 expected has-tests=false, got ${{ steps.sparse.outputs.has-tests }}"
+            exit 1
+          }
+          [ -z "${{ steps.sparse.outputs.fallback-args }}" ] || {
+            echo "::error::sparse shard 5 must be a no-op, got fallback args: ${{ steps.sparse.outputs.fallback-args }}"
+            exit 1
+          }
+          echo "✓ Sparse empty shard contract: shard 5 is a no-op with no native fallback"
+
+      - name: Log cold assignment outputs
         run: |
           echo "test-list-files: ${{ steps.orchestrate.outputs.test-list-files }}"
           echo "use-orchestrator: ${{ steps.orchestrate.outputs.use-orchestrator }}"
           echo "total-tests: ${{ steps.orchestrate.outputs.total-tests }}"
 
-      - name: Upload test-list.json for validation
+      - name: Prepare cold-round inputs
+        run: |
+          mkdir -p cold-inputs
+          cp examples/monorepo/apps/web/test-list.json cold-inputs/test-list.json
+          cat > cold-inputs/assignment.json <<'EOF'
+          ${{ steps.orchestrate.outputs.assignment }}
+          EOF
+
+      - name: Publish cold-round inputs
         uses: actions/upload-artifact@v4
         with:
-          name: test-list-json
-          path: examples/monorepo/apps/web/test-list.json
+          name: playwright-cold-inputs
+          path: cold-inputs/
           retention-days: 1
 
   # Job 3: Run tests in parallel matrix using real actions
@@ -100,8 +179,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      matrix:
-        shardIndex: [1, 2]
+      matrix: ${{ fromJson(needs.orchestrate.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -120,15 +198,15 @@ jobs:
           npx playwright install chromium
 
       # Use the REAL get-shard action
-      - name: Get shard assignment
+      - name: Load cold shard assignment
         id: shard
         uses: ./.github/actions/get-shard
         with:
           test-list-files: ${{ needs.orchestrate.outputs.test-list-files }}
           shard-index: ${{ matrix.shardIndex }}
-          shards: 2
+          shards: ${{ github.event.inputs.shards || '2' }}
 
-      - name: Debug shard info
+      - name: Log cold shard assignment
         run: |
           echo "test-list-file: ${{ steps.shard.outputs.test-list-file }}"
           echo "has-tests: ${{ steps.shard.outputs.has-tests }}"
@@ -138,13 +216,13 @@ jobs:
             head -5 "${{ steps.shard.outputs.test-list-file }}"
           fi
 
-      - name: Download test-list.json for validation
+      - name: Download cold-round inputs
         uses: actions/download-artifact@v4
         with:
-          name: test-list-json
-          path: examples/monorepo/apps/web
+          name: playwright-cold-inputs
+          path: cold-inputs
 
-      - name: Run Playwright tests
+      - name: Execute cold Playwright shard
         id: playwright
         working-directory: examples/monorepo/apps/web
         run: |
@@ -152,8 +230,10 @@ jobs:
           TEST_LIST_FILE="${{ steps.shard.outputs.test-list-file }}"
           if [ -n "$TEST_LIST_FILE" ] && [ -f "$TEST_LIST_FILE" ]; then
             npx playwright test --test-list "$TEST_LIST_FILE" 2>&1 | tee /tmp/playwright-output.txt || true
-          else
+          elif [ -n "${{ steps.shard.outputs.fallback-args }}" ]; then
             npx playwright test ${{ steps.shard.outputs.fallback-args }} 2>&1 | tee /tmp/playwright-output.txt || true
+          else
+            echo "Valid empty shard assignment; no tests executed" | tee /tmp/playwright-output.txt
           fi
 
           # Extract test counts from Playwright's summary line
@@ -164,7 +244,7 @@ jobs:
           echo "playwright-total=$TOTAL_COUNT" >> $GITHUB_OUTPUT
           echo "Extracted from Playwright summary: $PASSED_COUNT passed, $SKIPPED_COUNT skipped ($TOTAL_COUNT total)"
 
-      - name: Validate orchestrator filtering
+      - name: Validate cold shard coverage
         run: |
           echo "=== Validating orchestrator filtering ==="
 
@@ -175,27 +255,20 @@ jobs:
           TOTAL_COUNT="${{ steps.playwright.outputs.playwright-total }}"
           echo "Playwright reported: $PASSED_COUNT passed, $TOTAL_COUNT total (passed + skipped)"
 
-          TOLERANCE=3
-          DIFF=$((TOTAL_COUNT - EXPECTED_COUNT))
-          ABS_DIFF=${DIFF#-}
-
-          if [ "$ABS_DIFF" -gt "$TOLERANCE" ]; then
-            echo "::error::TEST COUNT MISMATCH!"
-            echo "::error::Expected: $EXPECTED_COUNT tests (from shard assignment)"
-            echo "::error::Actual: $TOTAL_COUNT tests (passed + skipped)"
-            echo "::error::Difference: $DIFF (tolerance: $TOLERANCE)"
+          if [ "$TOTAL_COUNT" -ne "$EXPECTED_COUNT" ]; then
+            echo "::error::cold shard ${{ matrix.shardIndex }} coverage failed: expected $EXPECTED_COUNT assigned occurrences, observed $TOTAL_COUNT; inspect playwright-results-shard-${{ matrix.shardIndex }}"
             exit 1
           fi
 
-          if [ "$PASSED_COUNT" -lt 5 ]; then
-            echo "::error::ORCHESTRATOR FILTERING FAILED! Shard only ran $PASSED_COUNT tests, expected at least 5"
+          if [ "$EXPECTED_COUNT" -gt 0 ] && [ "$PASSED_COUNT" -lt 1 ]; then
+            echo "::error::cold shard ${{ matrix.shardIndex }} executed no passing tests from $EXPECTED_COUNT assigned occurrences; inspect playwright-results-shard-${{ matrix.shardIndex }}"
             exit 1
           fi
 
-          echo "✓ Orchestrator filtering validated: $TOTAL_COUNT tests visible (expected: $EXPECTED_COUNT, within tolerance: $TOLERANCE)"
+          echo "✓ Cold shard ${{ matrix.shardIndex }} coverage: $TOTAL_COUNT/$EXPECTED_COUNT report occurrences"
 
       # Upload the raw Playwright JSON report for debugging
-      - name: Upload Playwright JSON report
+      - name: Publish cold Playwright report
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
@@ -204,7 +277,7 @@ jobs:
           if-no-files-found: ignore
 
       # Use the REAL extract-timing action (no shard-file needed — reports are natively clean)
-      - name: Extract timing
+      - name: Extract cold timing measurements
         if: success() || failure()
         uses: ./.github/actions/extract-timing
         with:
@@ -214,7 +287,7 @@ jobs:
           project: chromium
 
       # Validate timing artifact test ID format
-      - name: Validate timing artifact test ID format
+      - name: Validate cold timing identities
         if: success() || failure()
         run: |
           echo "=== Validating Timing Artifact Test ID Format ==="
@@ -249,7 +322,7 @@ jobs:
           echo "✓ No path mismatch or duplicate filename bugs detected in timing artifact"
 
       # Rename blob report to avoid filename collision during merge
-      - name: Rename blob report for unique naming
+      - name: Name cold blob report uniquely
         if: success() || failure()
         run: |
           BLOB_DIR="examples/monorepo/apps/web/blob-report"
@@ -262,7 +335,7 @@ jobs:
             echo "No blob-report directory found, skipping rename"
           fi
 
-      - name: Upload blob report
+      - name: Publish cold blob report
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
@@ -272,7 +345,7 @@ jobs:
           compression-level: 0
           if-no-files-found: ignore
 
-      - name: Upload timing artifact
+      - name: Publish cold timing artifact
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
@@ -305,7 +378,42 @@ jobs:
           pattern: blob-report-*
           merge-multiple: true
 
-      - name: Check for blob reports
+      - name: Download cold-round inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: playwright-cold-inputs
+          path: cold-inputs
+
+      - name: Download cold JSON reports
+        uses: actions/download-artifact@v4
+        with:
+          path: cold-reports
+          pattern: playwright-results-shard-*
+
+      - name: Validate cold report coverage
+        run: |
+          set -euo pipefail
+          ASSIGNMENT=cold-inputs/assignment.json
+          EXPECTED=$(jq '[.shards[] | length] | add' "$ASSIGNMENT")
+          mapfile -t REPORTS < <(find cold-reports -name '*.json' -print)
+          [ "${#REPORTS[@]}" -gt 0 ] || { echo "::error::cold report coverage failed: no reports found under cold-reports"; exit 1; }
+          OBSERVED=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[]] | length' "${REPORTS[@]}")
+          STATIC=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[] | .results[]? | select(.status == "skipped")] | length' "${REPORTS[@]}")
+          {
+            echo ""
+            echo "### 3. Cold report coverage"
+            echo ""
+            echo "| Assigned occurrences | Reported occurrences | Static skips |"
+            echo "| ---: | ---: | ---: |"
+            echo "| $EXPECTED | $OBSERVED | $STATIC |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$EXPECTED" -eq "$OBSERVED" ] || {
+            echo "::error::cold report coverage failed: expected $EXPECTED assigned occurrences, observed $OBSERVED in cold-reports/; inspect cold-reports"
+            exit 1
+          }
+          echo "✓ Cold report coverage: $OBSERVED/$EXPECTED assigned occurrences ($STATIC static skipped)"
+
+      - name: Detect cold blob reports
         id: check-blobs
         working-directory: examples/monorepo/apps/web
         run: |
@@ -317,12 +425,12 @@ jobs:
           fi
 
       # Merge into HTML report
-      - name: Merge into HTML Report
+      - name: Merge cold HTML report
         if: steps.check-blobs.outputs.has-blobs == 'true'
         working-directory: examples/monorepo/apps/web
         run: npx playwright merge-reports --reporter html ./all-blob-reports
 
-      - name: Upload HTML report
+      - name: Publish cold HTML report
         if: steps.check-blobs.outputs.has-blobs == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -331,7 +439,7 @@ jobs:
           retention-days: 1
 
       # Merge into JSON report — natively clean with --test-list, no filter-report needed
-      - name: Merge into JSON Report
+      - name: Merge cold JSON report
         if: steps.check-blobs.outputs.has-blobs == 'true'
         working-directory: examples/monorepo/apps/web
         run: |
@@ -339,7 +447,7 @@ jobs:
           npx playwright merge-reports --reporter json ./all-blob-reports > merged-report/results.json
           echo "Merged report created: $(wc -c < merged-report/results.json) bytes"
 
-      - name: Check merged report for duplicate entries
+      - name: Check merged report duplicates
         if: steps.check-blobs.outputs.has-blobs == 'true'
         working-directory: examples/monorepo/apps/web
         run: |
@@ -363,13 +471,13 @@ jobs:
             echo "✓ No duplicate entries in merged report"
           fi
 
-      - name: Playwright report summary
+      - name: Publish Playwright report summary
         if: steps.check-blobs.outputs.has-blobs == 'true'
         uses: nsx-actions/daun_playwright-report-summary@v3
         with:
           report-file: examples/monorepo/apps/web/merged-report/results.json
 
-      - name: Upload merged JSON report
+      - name: Publish merged JSON report
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
@@ -400,17 +508,17 @@ jobs:
           pattern: timing-shard-*
           merge-multiple: true
 
-      - name: List timing files
+      - name: List cold timing artifacts
         run: ls -la timing-shard-*.json 2>/dev/null || echo "No timing files found"
 
       # Use the REAL merge-timing action
-      - name: Merge timing
+      - name: Merge cold timing measurements
         uses: ./.github/actions/merge-timing
         with:
           new-files: "timing-shard-*.json"
           output-file: playwright-timing.json
 
-      - name: Verify merged timing
+      - name: Validate cold timing store
         run: |
           if [ -f playwright-timing.json ]; then
             echo "=== Merged timing data ==="
@@ -418,35 +526,42 @@ jobs:
             
             TEST_COUNT=$(cat playwright-timing.json | jq '.tests | length' 2>/dev/null || echo "0")
             echo ""
-            echo "Total tests with timing: $TEST_COUNT"
+            echo "Total executable tests with timing: $TEST_COUNT"
             
             MIN_EXPECTED_TIMING=40
             if [ "$TEST_COUNT" -lt "$MIN_EXPECTED_TIMING" ]; then
-              echo "::error::TIMING MERGE FAILED! Only $TEST_COUNT tests have timing, expected at least $MIN_EXPECTED_TIMING"
+              echo "::error::TIMING MERGE FAILED! Only $TEST_COUNT executable tests have timing, expected at least $MIN_EXPECTED_TIMING"
               exit 1
             fi
             
-            echo "✓ Timing merge validated: $TEST_COUNT tests have timing data"
+            echo "✓ Timing merge validated: $TEST_COUNT executable tests have timing data"
           else
             echo "::error::No merged timing file created"
             exit 1
           fi
 
-      # Download test-list.json to validate round-trip
-      - name: Download test-list.json
+      - name: Download cold-round inputs
         uses: actions/download-artifact@v4
         with:
-          name: test-list-json
+          name: playwright-cold-inputs
+          path: cold-inputs
+
+      - name: Load cold shard reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-results-shard-*
+          merge-multiple: true
+          path: cold-reports
 
       # Validate timing data round-trip: extract-timing -> merge -> assign
-      - name: Validate timing data round-trip
+      - name: Validate warm timing hand-off
         run: |
           echo "=== Validating Timing Data Round-Trip ==="
 
           RESULT=$(playwright-orchestrator assign \
-            --test-list test-list.json \
+            --test-list cold-inputs/test-list.json \
             --timing-file playwright-timing.json \
-            --shards 2 \
+            --shards "${{ github.event.inputs.shards || '2' }}" \
             --output-format json)
 
           echo "=== Assign Output ==="
@@ -487,3 +602,281 @@ jobs:
           echo "✓ Timing data round-trip validated!"
           echo "  - $((TOTAL_TESTS - ESTIMATED_COUNT)) tests matched timing data"
           echo "  - $ESTIMATED_COUNT tests estimated (new or ID mismatch)"
+
+      - name: Prepare warm-start inputs
+        run: |
+          mkdir -p warm-inputs
+          cp cold-inputs/test-list.json warm-inputs/test-list.json
+          cp cold-inputs/assignment.json warm-inputs/assignment.json
+          cp playwright-timing.json warm-inputs/playwright-timing.json
+
+      - name: Publish warm-start inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-warm-inputs
+          path: warm-inputs/
+          retention-days: 1
+
+  warm-orchestrate:
+    name: Orchestrate Playwright warm plan
+    needs: [setup, orchestrate, merge]
+    runs-on: ubuntu-24.04
+    outputs:
+      test-list-files: ${{ steps.orchestrate.outputs.test-list-files }}
+      expected-durations: ${{ steps.orchestrate.outputs.expected-durations }}
+      assignment: ${{ steps.orchestrate.outputs.assignment }}
+      cold-expected-durations: ${{ needs.orchestrate.outputs.expected-durations }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-tarball
+          path: packages/playwright-orchestrator
+      - uses: actions/download-artifact@v4
+        with:
+          name: playwright-warm-inputs
+          path: warm-inputs
+      - name: Install CLI globally from tarball
+        run: npm install -g ./packages/playwright-orchestrator/nsxbet-playwright-orchestrator-*.tgz
+      - name: Create warm-start assignment
+        id: orchestrate
+        uses: ./.github/actions/orchestrate
+        with:
+          test-list: warm-inputs/test-list.json
+          timing-file: warm-inputs/playwright-timing.json
+          shards: ${{ github.event.inputs.shards || '2' }}
+      - name: Prepare warm-start assignment
+        run: |
+          mkdir -p warm-plan
+          cat > warm-plan/assignment.json <<'EOF'
+          ${{ steps.orchestrate.outputs.assignment }}
+          EOF
+
+      - name: Publish warm-start assignment
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-warm-plan
+          path: warm-plan/
+          retention-days: 1
+
+      - name: Write warm plan diagnostics
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/format-duration.sh"
+          COLD='${{ needs.orchestrate.outputs.expected-durations }}'
+          WARM='${{ steps.orchestrate.outputs.expected-durations }}'
+          COLD_ASSIGNMENT='${{ needs.orchestrate.outputs.assignment }}'
+          WARM_ASSIGNMENT='${{ steps.orchestrate.outputs.assignment }}'
+          COLD_TESTS=$(jq '[.shards[] | length] | add' <<< "$COLD_ASSIGNMENT")
+          WARM_TESTS=$(jq '[.shards[] | length] | add' <<< "$WARM_ASSIGNMENT")
+          PLACEMENT_CHANGED=$(jq -n --argjson cold "$COLD_ASSIGNMENT" --argjson warm "$WARM_ASSIGNMENT" '$cold.shards != $warm.shards')
+          {
+            echo ""
+            echo "### 5. Warm plan"
+            echo "- Timing-store source: \`playwright-warm-inputs/playwright-timing.json\`"
+            echo "- Assigned occurrences: $WARM_TESTS (cold: $COLD_TESTS)"
+            echo ""
+            echo "| Shard | Cold planned | Warm planned |"
+            echo "| --- | ---: | ---: |"
+            jq -nr --argjson cold "$COLD" --argjson warm "$WARM" '$warm | to_entries[] | [.key, ($cold[.key] // 0), .value] | @tsv' | while IFS=$'\t' read -r shard cold_duration warm_duration; do
+              printf '| %s | %s | %s |\n' "$shard" "$(format_duration "$cold_duration")" "$(format_duration "$warm_duration")"
+            done
+            echo ""
+            echo "- Placement changed: $PLACEMENT_CHANGED (diagnostic only; wall-clock timing is not required to move a shard)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$COLD_TESTS" -eq "$WARM_TESTS" ] || {
+            echo "::error::warm plan coverage failed: cold assignment has $COLD_TESTS occurrences, warm assignment has $WARM_TESTS; inspect playwright-warm-plan/assignment.json"
+            exit 1
+          }
+
+  warm-e2e-tests:
+    name: Playwright warm shard ${{ matrix.shardIndex }}
+    needs: [setup, orchestrate, warm-orchestrate]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.orchestrate.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-tarball
+          path: packages/playwright-orchestrator
+      - name: Install CLI globally from tarball
+        run: npm install -g ./packages/playwright-orchestrator/nsxbet-playwright-orchestrator-*.tgz
+      - name: Install monorepo dependencies
+        working-directory: examples/monorepo/apps/web
+        run: |
+          npm install
+          npx playwright install chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: playwright-warm-plan
+          path: warm-plan
+      - name: Load warm shard assignment
+        id: shard
+        uses: ./.github/actions/get-shard
+        with:
+          test-list-files: ${{ needs.warm-orchestrate.outputs.test-list-files }}
+          shard-index: ${{ matrix.shardIndex }}
+          shards: ${{ github.event.inputs.shards || '2' }}
+      - name: Execute warm Playwright shard
+        working-directory: examples/monorepo/apps/web
+        run: |
+          LIST="${{ steps.shard.outputs.test-list-file }}"
+          if [ -n "$LIST" ] && [ -f "$LIST" ]; then
+            npx playwright test --test-list "$LIST" --reporter=json > warm-report-${{ matrix.shardIndex }}.json || true
+          else
+            echo "Valid empty shard assignment; no tests executed"
+          fi
+      - name: Extract warm timing measurements
+        if: steps.shard.outputs.has-tests == 'true'
+        uses: ./.github/actions/extract-timing
+        with:
+          report-file: examples/monorepo/apps/web/warm-report-${{ matrix.shardIndex }}.json
+          output-file: warm-timing-shard-${{ matrix.shardIndex }}.json
+          shard: ${{ matrix.shardIndex }}
+          project: chromium
+      - uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: playwright-warm-timing-${{ matrix.shardIndex }}
+          path: warm-timing-shard-${{ matrix.shardIndex }}.json
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: playwright-warm-report-${{ matrix.shardIndex }}
+          path: examples/monorepo/apps/web/warm-report-${{ matrix.shardIndex }}.json
+          if-no-files-found: ignore
+
+  verify-warm-start:
+    name: Verify Playwright warm start
+    needs: [setup, merge, warm-e2e-tests]
+    if: success() || failure()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-tarball
+          path: packages/playwright-orchestrator
+      - name: Install CLI globally from tarball
+        run: npm install -g ./packages/playwright-orchestrator/nsxbet-playwright-orchestrator-*.tgz
+      - uses: actions/download-artifact@v4
+        with:
+          name: playwright-warm-inputs
+          path: warm-inputs
+      - uses: actions/download-artifact@v4
+        with:
+          name: playwright-warm-plan
+          path: warm-plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-results-shard-*
+          path: cold-reports
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: timing-shard-*
+          merge-multiple: true
+          path: cold-timing-artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-warm-timing-*
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-warm-report-*
+          path: warm-reports
+      - name: Validate warm execution and timing updates
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/format-duration.sh"
+          FIRST=$(jq '.tests | length' warm-inputs/playwright-timing.json)
+          COLD_ASSIGNED=$(jq '[.shards[] | length] | add' warm-inputs/assignment.json)
+          COLD_PLANNED=$(jq '[.expectedDurations[]] | add' warm-inputs/assignment.json)
+          EXPECTED=$(jq '[.shards[] | length] | add' warm-plan/assignment.json)
+          WARM_PLANNED=$(jq '[.expectedDurations[]] | add' warm-plan/assignment.json)
+          mapfile -t COLD_REPORTS < <(find cold-reports -name '*.json' -print)
+          mapfile -t WARM_REPORTS < <(find warm-reports -name '*.json' -print)
+          [ "${#COLD_REPORTS[@]}" -gt 0 ] || { echo "::error::cold report coverage failed: no reports found under cold-reports"; exit 1; }
+          [ "${#WARM_REPORTS[@]}" -gt 0 ] || { echo "::error::warm report coverage failed: no reports found under warm-reports"; exit 1; }
+          COLD_OBSERVED=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[]] | length' "${COLD_REPORTS[@]}")
+          WARM_OBSERVED=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[]] | length' "${WARM_REPORTS[@]}")
+          COLD_STATIC=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[] | .results[]? | select(.status == "skipped")] | length' "${COLD_REPORTS[@]}")
+          WARM_STATIC=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[] | .results[]? | select(.status == "skipped")] | length' "${WARM_REPORTS[@]}")
+          COLD_EXECUTABLE=$((COLD_ASSIGNED - COLD_STATIC))
+          WARM_EXECUTABLE=$((EXPECTED - WARM_STATIC))
+          COLD_MEASURED=$(jq -s 'map(.tests | length) | add' cold-timing-artifacts/timing-shard-*.json)
+          WARM_MEASURED=$(jq -s 'map(.tests | length) | add' warm-timing-shard-*.json)
+          COLD_MEASURED_DURATION=$(jq -s '[.[] | .tests[]] | add // 0' cold-timing-artifacts/timing-shard-*.json)
+          WARM_MEASURED_DURATION=$(jq -s '[.[] | .tests[]] | add // 0' warm-timing-shard-*.json)
+          [ "$COLD_ASSIGNED" -eq "$COLD_OBSERVED" ] || { echo "::error::cold report coverage failed: expected $COLD_ASSIGNED assigned occurrences, observed $COLD_OBSERVED; inspect cold-reports"; exit 1; }
+          [ "$EXPECTED" -eq "$WARM_OBSERVED" ] || { echo "::error::warm report coverage failed: expected $EXPECTED assigned occurrences, observed $WARM_OBSERVED; inspect warm-reports"; exit 1; }
+          [ "$COLD_MEASURED" -eq "$COLD_EXECUTABLE" ] || { echo "::error::cold timing collection failed: expected $COLD_EXECUTABLE executable measurements after $COLD_STATIC static skips, observed $COLD_MEASURED; inspect cold-timing-artifacts"; exit 1; }
+          [ "$WARM_MEASURED" -eq "$WARM_EXECUTABLE" ] || { echo "::error::warm timing collection failed: expected $WARM_EXECUTABLE executable measurements after $WARM_STATIC static skips, observed $WARM_MEASURED; inspect warm-timing-shard artifacts"; exit 1; }
+          playwright-orchestrator merge-timing --existing warm-inputs/playwright-timing.json --new warm-timing-shard-*.json --output warm-timing.json
+          SECOND=$(jq '.tests | length' warm-timing.json)
+          REPEATED=$(jq '[.tests[] | select(.runs >= 2)] | length' warm-timing.json)
+          [ "$FIRST" -gt 0 ] || { echo "::error::warm hand-off has no cold timing entries; inspect playwright-warm-inputs"; exit 1; }
+          [ "$SECOND" -eq "$FIRST" ] || { echo "::error::warm merge changed entries: expected $FIRST, got $SECOND; inspect warm-timing-shard artifacts"; exit 1; }
+          [ "$REPEATED" -eq "$FIRST" ] || { echo "::error::warm merge updated $REPEATED/$FIRST executable timing entries; inspect warm-timing-shard artifacts"; exit 1; }
+          {
+            echo "## Playwright cold-to-warm lifecycle verdict"
+            echo ""
+            echo "### 1. Run configuration"
+            echo "- Framework: Playwright"
+            echo "- Shards: ${{ github.event.inputs.shards || '2' }} (five-shard sparse-plan contract validated separately)"
+            echo "- Cold timing-store source: absent; warm input: \`playwright-warm-inputs/playwright-timing.json\`"
+            echo ""
+            echo "### 2. Cold plan"
+            echo "- Discovered/assigned occurrences: $COLD_ASSIGNED/$COLD_ASSIGNED"
+            echo "- Total planned duration: $(format_duration "$COLD_PLANNED") (fallback estimates)"
+            echo ""
+            echo "| Cold shard | Assigned tests | Expected duration |"
+            echo "| --- | ---: | ---: |"
+            jq -r '(.shards | to_entries[]) as $shard | [$shard.key, ($shard.value | length), (.expectedDurations[$shard.key] // 0)] | @tsv' warm-inputs/assignment.json | while IFS=$'\t' read -r shard tests duration; do
+              printf '| %s | %s | %s |\n' "$shard" "$tests" "$(format_duration "$duration")"
+            done
+            echo ""
+            echo "### 3. Cold execution and collection"
+            echo "- Report-covered occurrences: $COLD_OBSERVED/$COLD_ASSIGNED (reports: \`cold-reports/\`)"
+            echo "- Static skipped occurrences: $COLD_STATIC"
+            echo "- Executable measurements: $COLD_MEASURED/$COLD_EXECUTABLE, $(format_duration "$COLD_MEASURED_DURATION") (artifacts: \`cold-timing-artifacts/\`)"
+            echo "- Merged timing entries: $FIRST"
+            echo ""
+            echo "### 4. Timing hand-off"
+            echo "- Exact cold store supplied to warm assignment: \`playwright-warm-inputs/playwright-timing.json\`"
+            echo "- Cold timing entries available to warm plan: $FIRST"
+            echo ""
+            echo "### 5. Warm plan"
+            echo "- Assigned occurrences: $EXPECTED"
+            echo "- Total planned duration: $(format_duration "$WARM_PLANNED") (cold: $(format_duration "$COLD_PLANNED"))"
+            echo ""
+            echo "| Warm shard | Assigned tests | Expected duration |"
+            echo "| --- | ---: | ---: |"
+            jq -r '(.shards | to_entries[]) as $shard | [$shard.key, ($shard.value | length), (.expectedDurations[$shard.key] // 0)] | @tsv' warm-plan/assignment.json | while IFS=$'\t' read -r shard tests duration; do
+              printf '| %s | %s | %s |\n' "$shard" "$tests" "$(format_duration "$duration")"
+            done
+            echo ""
+            echo "- Placement/load comparison: see warm-plan diagnostics in job \`Orchestrate Playwright warm plan\`"
+            echo ""
+            echo "### 6. Warm execution and second merge"
+            echo "- Report-covered occurrences: $WARM_OBSERVED/$EXPECTED (reports: \`warm-reports/\`)"
+            echo "- Static skipped occurrences: $WARM_STATIC"
+            echo "- Executable measurements: $WARM_MEASURED/$WARM_EXECUTABLE, $(format_duration "$WARM_MEASURED_DURATION") (artifacts: \`playwright-warm-timing-*\`)"
+            echo "- Repeated observations: $REPEATED/$FIRST"
+            echo ""
+            echo "### 7. Final verdict"
+            echo ""
+            echo "| Invariant | Expected | Actual | Result |"
+            echo "| --- | --- | --- | --- |"
+            echo "| Cold assignment coverage | $COLD_ASSIGNED | $COLD_OBSERVED | PASS |"
+            echo "| Cold executable measurements | $COLD_EXECUTABLE | $COLD_MEASURED | PASS |"
+            echo "| Cold store passed to warm plan | non-empty | $FIRST entries | PASS |"
+            echo "| Warm report coverage | $EXPECTED | $WARM_OBSERVED | PASS |"
+            echo "| Warm executable measurements | $WARM_EXECUTABLE | $WARM_MEASURED | PASS |"
+            echo "| Second-run observations | $FIRST | $REPEATED | PASS |"
+            echo "| Sparse empty shard | no-op | no native fallback | PASS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ Playwright warm lifecycle: $WARM_OBSERVED/$EXPECTED report coverage and $REPEATED/$FIRST repeated timings"

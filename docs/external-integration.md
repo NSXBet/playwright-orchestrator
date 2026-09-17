@@ -456,6 +456,7 @@ Assigns tests to shards.
 - `total-tests`: Total number of tests
 - `is-optimal`: Whether distribution is optimal
 - `use-orchestrator`: Whether orchestration succeeded
+- `assignment`: Complete assignment JSON for diagnostics or advanced validation
 
 **Note:** On first run, the timing file may not exist yet. The action will use estimation and emit a notice.
 
@@ -477,7 +478,14 @@ Writes a test-list file for a specific shard.
 - `test-list-file`: Path to plain text file for `--test-list` flag
 - `has-tests`: Whether this shard has tests
 - `test-count`: Number of tests in this shard
-- `fallback-args`: Native Playwright shard argument (`--shard=N/M`)
+- `fallback-args`: Native Playwright shard argument (`--shard=N/M`) when no orchestrator plan is available
+
+A valid sparse assignment is different from an unavailable plan: if the shard
+is present in `test-list-files` with an empty value, `get-shard` returns
+`has-tests=false` with an empty `fallback-args`. Treat that shard as a
+successful no-op; do not run native Playwright sharding, which could execute
+tests outside the assignment. A missing shard key instead retains the native
+fallback, making a truncated assignment visible.
 
 ### extract-timing
 
@@ -508,14 +516,9 @@ Merges timing data with EMA smoothing.
 
 ## Fallback Behavior
 
-The orchestrator automatically falls back to Playwright's native `--shard` flag when:
+The orchestrator automatically falls back to Playwright's native `--shard` flag when no valid orchestrator plan is available, for example when the CLI fails to execute. A missing or corrupted timing file is a cold start, not a fallback: the orchestrator uses estimates and creates timing data after the run.
 
-- CLI fails to execute
-- No tests are discovered
-- Timing file is corrupted
-- Shard is assigned zero tests
-
-This ensures your tests **always run**, even on the first execution or if something goes wrong.
+A valid empty shard is a successful no-op rather than a native fallback, preserving the exact assignment.
 
 ## Storage Control
 

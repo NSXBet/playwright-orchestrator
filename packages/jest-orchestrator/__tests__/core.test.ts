@@ -5,9 +5,12 @@ import {
   DEFAULT_TEST_DURATION,
   verifyShardRun,
 } from "../src/core/assign.js";
+import { formatDuration } from "../src/core/format-duration.js";
 import { selectedTestsForShard, summarizeJestReport } from "../src/commands/annotate.js";
 import { assignWithCKK } from "../src/core/ckk-algorithm.js";
+import { DiscoveryError } from "../src/core/discovery.js";
 import { assignWithLPT } from "../src/core/lpt-algorithm.js";
+import { runShard, ShardRunError } from "../src/core/runner.js";
 import { mergeTimingData, pruneTimingData } from "../src/core/timing-store.js";
 import type {
   AssignResult,
@@ -16,6 +19,43 @@ import type {
   TestWithDuration,
 } from "../src/core/types.js";
 import { identityFromKey, identityKey } from "../src/core/types.js";
+
+describe("formatDuration", () => {
+  test.each([
+    [0, "0ms"],
+    [999, "999ms"],
+    [1000, "1s"],
+    [1499, "1s"],
+    [1500, "2s"],
+    [59999, "1m"],
+    [60000, "1m"],
+    [61000, "1m1s"],
+    [500000, "8m20s"],
+    [3661000, "1h1m1s"],
+    [90061000, "1d1h1m1s"],
+  ])("formats %d milliseconds as %s", (milliseconds, expected) => {
+    expect(formatDuration(milliseconds)).toBe(expected);
+  });
+
+  test("rejects invalid durations", () => {
+    expect(() => formatDuration(-1)).toThrow(RangeError);
+    expect(() => formatDuration(Number.NaN)).toThrow(RangeError);
+  });
+});
+
+describe("duration error messages", () => {
+  test("formats discovery timeouts for people", () => {
+    expect(new DiscoveryError(`timed out after ${formatDuration(500000)}`, "").message).toBe(
+      "timed out after 8m20s",
+    );
+  });
+
+  test("formats shard timeouts for people", () => {
+    expect(new ShardRunError(`timed out after ${formatDuration(61000)}`, "").message).toBe(
+      "timed out after 1m1s",
+    );
+  });
+});
 
 describe("identity", () => {
   test("key round-trips through weird names", () => {
@@ -97,6 +137,23 @@ describe("file-level assignment", () => {
       level: "test",
     });
     expect(result.level).toBe("test");
+  });
+});
+
+describe("empty shard plans", () => {
+  test("are successful no-ops without spawning Jest", async () => {
+    const result = await runShard({
+      root: "/not-a-jest-project",
+      plan: { shard: 5, files: [], selection: [] },
+      jestBin: "/must-not-be-spawned",
+    });
+    expect(result).toEqual({
+      shard: 5,
+      ok: true,
+      problems: [],
+      measurements: [],
+      report: undefined,
+    });
   });
 });
 

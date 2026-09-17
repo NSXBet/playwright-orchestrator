@@ -3,6 +3,7 @@ import { Command, Flags } from "@oclif/core";
 import {
   assignWithCKK,
   calculateFileAffinityPenalty,
+  formatDuration,
   DEFAULT_CKK_TIMEOUT,
   type DiscoveredTest,
   getTestDurations,
@@ -132,7 +133,7 @@ export default class Assign extends Command {
         flags["file-affinity-penalty"] ?? calculateFileAffinityPenalty(timingData);
 
       if (flags.verbose) {
-        this.log(`File affinity penalty: ${this.formatDuration(fileAffinityPenalty)}`);
+        this.log(`File affinity penalty: ${formatDuration(fileAffinityPenalty)}`);
       }
     }
 
@@ -140,7 +141,7 @@ export default class Assign extends Command {
 
     if (flags.verbose) {
       this.log(`Assignment ${ckkResult.isOptimal ? "optimal" : "near-optimal (LPT fallback)"}`);
-      this.log(`Makespan: ${this.formatDuration(ckkResult.makespan)}`);
+      this.log(`Makespan: ${formatDuration(ckkResult.makespan)}`);
     }
 
     const shardTests: Record<number, string[]> = {};
@@ -183,7 +184,7 @@ export default class Assign extends Command {
       this.log("\n=== Shard Assignments ===\n");
       for (const [shard, tests] of Object.entries(result.shards)) {
         const duration = result.expectedDurations[Number(shard)];
-        const durationStr = this.formatDuration(duration ?? 0);
+        const durationStr = formatDuration(duration ?? 0);
         this.log(`Shard ${shard} (${durationStr}, ${tests.length} tests):`);
 
         if (verbose) {
@@ -200,12 +201,5 @@ export default class Assign extends Command {
         this.log(`Tests with estimated duration: ${result.estimatedTests.length}`);
       }
     }
-  }
-
-  private formatDuration(ms: number): string {
-    const seconds = Math.round(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;
   }
 }
