@@ -1,0 +1,40 @@
+.github/workflows/e2e-jest-monorepo.yml
+  s_8d7469571869f0::t_0adfcdd50635ee 86-109,180-185
+packages/jest-orchestrator/src/commands/annotate.ts
+  s_8d7469571869f0::t_4610cd7cbc1b5f 131
+  s_8d7469571869f0::t_aa01b6c47d3be6 94-98,125
+packages/jest-orchestrator/src/commands/assign.ts
+  s_8d7469571869f0::t_31574fc6456b39 6,60-67
+.changeset/moody-radios-shave.md
+  s_8d7469571869f0::t_9609ea12bdbbcc 1,3
+  s_8d7469571869f0::t_60a2cda1ea9ac6 2,4-5
+packages/jest-orchestrator/__tests__/core.test.ts
+  s_8d7469571869f0::t_7db3a53874ca19 2-7,190-202
+  s_ada7cacec02012::t_45a1002f0c0fc4 203-204
+packages/jest-orchestrator/src/core/assign.ts
+  s_8d7469571869f0::t_f489b79d7cecac 10-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "86eb36d1bbe7a76963d3e334fc89dea3de408163",
+  "prompts": {},
+  "sessions": {
+    "s_8d7469571869f0": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ad6d-3bdf-75b6-80e3-e846da2398a8",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    },
+    "s_ada7cacec02012": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ad67-22d2-758c-babb-f2b837b228c9",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
