@@ -23,7 +23,7 @@ The system SHALL provide `@nsxbet/jest-orchestrator` as a public npm package tha
 
 ### Requirement: Jest assignment granularity and timing learning
 
-The Jest orchestrator SHALL support test-level assignment by default and file-level assignment on request. It SHALL use historical per-test timings when present, estimate unknown durations consistently with the repository's orchestration behavior, and merge shard timings with EMA smoothing.
+The Jest orchestrator SHALL support file-level assignment by default and test-level assignment on request. It SHALL use historical per-test timings when present, estimate unknown durations consistently with the repository's orchestration behavior, and merge shard timings with EMA smoothing.
 
 #### Scenario: File-level assignment
 

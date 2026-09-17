@@ -8,9 +8,9 @@ on:
         required: false
         default: "2"
       level:
-        description: Assignment granularity (test | file)
+        description: Assignment granularity (file | test)
         required: false
-        default: test
+        default: file
   pull_request:
     paths:
       - "packages/jest-orchestrator/**"
@@ -81,7 +81,7 @@ jobs:
           root: examples/monorepo/apps/web
           timing-file: jest-monorepo-timing.json
           shards: ${{ github.event.inputs.shards || '2' }}
-          level: ${{ github.event.inputs.level || 'test' }}
+          level: ${{ github.event.inputs.level || 'file' }}
 
       - name: Upload assignment artifact
         uses: actions/upload-artifact@v4
@@ -280,7 +280,7 @@ jobs:
             --manifest .orchestration/manifest.json \
             --timings jest-monorepo-timing.json \
             --shards "${{ github.event.inputs.shards || '2' }}" \
-            --level "${{ github.event.inputs.level || 'test' }}" \
+            --level "${{ github.event.inputs.level || 'file' }}" \
             --output roundtrip-assignment.json
           TOTAL=$(jq '.totalTests' roundtrip-assignment.json)
           echo "✓ Timing round trip validated: $ENTRIES timing entries for $TOTAL discovered tests"

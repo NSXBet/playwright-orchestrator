@@ -36,8 +36,8 @@ export default class Assign extends Command {
       required: true,
     }),
     level: Flags.string({
-      description: "Assignment granularity: 'test' (default) or 'file'",
-      default: "test",
+      description: "Assignment granularity: 'file' (default) or 'test'",
+      default: "file",
     }),
     format: Flags.string({
       description: "Output format: json|text",

@@ -4,7 +4,7 @@ The workspace currently orchestrates Playwright tests only. The existing `jest-o
 
 ## What Changes
 
-- Add public npm package `@nsxbet/jest-orchestrator` at `packages/jest-orchestrator/`, preserving its Jest 30 exact-selection shim, CLI commands, CKK/LPT assignment, timing store, and library exports.
+- Add public npm package `@nsxbet/jest-orchestrator` at `packages/jest-orchestrator/`, preserving its Jest 30 exact-selection shim, CLI commands, CKK/LPT assignment, timing store, and library exports, with file-level assignment as the default scheduling policy.
 - Add distinct root composite Actions: `jest-orchestrate`, `jest-get-shard`, and `jest-merge-timing`, leaving existing Playwright action paths unchanged.
 - Extend the basic and monorepo fixtures with Jest configurations and test cases covering the same representative path, nesting, parameterization, skip, Unicode, separator, and special-character scenarios as their Playwright counterparts.
 - Add Jest basic and monorepo GitHub Actions E2E workflows that package the workspace, install the packed Jest CLI, orchestrate shard execution, validate exact coverage and timing artifacts, merge timings, and validate a timing round trip.

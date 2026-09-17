@@ -8,9 +8,9 @@ on:
         required: false
         default: "3"
       level:
-        description: Assignment granularity (test | file)
+        description: Assignment granularity (file | test)
         required: false
-        default: "test"
+        default: file
 
 jobs:
   # Phase 1: Orchestrate (assign tests to shards)
@@ -53,7 +53,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: timing-data.json
-          key: jest-orchestrator-timing-${{ github.ref_name }}-${{ github.event.inputs.level || 'test' }}-${{ github.run_id }}
+          key: jest-orchestrator-timing-${{ github.ref_name }}-${{ github.event.inputs.level || 'file' }}-${{ github.run_id }}
           restore-keys: |
             jest-orchestrator-timing-${{ github.ref_name }}-
             jest-orchestrator-timing-main-
@@ -81,7 +81,7 @@ jobs:
           root: examples/basic
           timing-file: timing-data.json
           shards: ${{ github.event.inputs.shards || '3' }}
-          level: ${{ github.event.inputs.level || 'test' }}
+          level: ${{ github.event.inputs.level || 'file' }}
 
       - name: Upload assignment artifact
         if: success() || failure()
@@ -214,14 +214,14 @@ jobs:
 
       - name: Assert all e2e guarantees
         env:
-          LEVEL: ${{ github.event.inputs.level || 'test' }}
+          LEVEL: ${{ github.event.inputs.level || 'file' }}
         run: bash scripts/verify-jest-e2e-assertions.sh
 
       - name: Save timing cache for next run
         uses: actions/cache/save@v4
         with:
           path: timing-data.json
-          key: jest-orchestrator-timing-${{ github.ref_name }}-${{ github.event.inputs.level || 'test' }}-${{ github.run_id }}
+          key: jest-orchestrator-timing-${{ github.ref_name }}-${{ github.event.inputs.level || 'file' }}-${{ github.run_id }}
 
       - name: Show timing data
         run: |

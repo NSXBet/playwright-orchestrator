@@ -6,7 +6,7 @@ The repository is a Bun/Turborepo workspace with one public Playwright package a
 
 **Goals:**
 
-- Preserve the Jest project's tested source behavior while adapting only the workspace and public-repository integration points required by this repository.
+- Preserve the Jest project's tested source behavior while using file-level assignment as the default scheduling policy.
 - Keep Playwright and Jest packages, Actions, fixtures, and E2E workflows independently runnable.
 - Make both packages publishable through the existing public npm/Changesets release mechanism.
 
@@ -32,7 +32,7 @@ Alternative: make generic framework-selecting Actions. Rejected because it would
 
 ### Parallel fixture coverage
 
-Add Jest configuration and Jest test files to the existing `examples/basic` and `examples/monorepo/apps/web` directories. Reproduce the Playwright fixture variety using Jest semantics: deep paths, nesting, parameterization, skip/todo cases, Unicode, `::`, case variants, duplicate names, and special characters. Separate workflow names and filenames keep the two framework E2E pipelines independent.
+Add Jest configuration and Jest test files to the existing `examples/basic` and `examples/monorepo/apps/web` directories. Reproduce the Playwright fixture variety using Jest semantics: deep paths, nesting, parameterization, skip/todo cases, Unicode, `::`, case variants, duplicate names, and special characters. File-level assignment is the default for the CLI, Actions, and workflows; explicit `test` selection remains available. Separate workflow names and filenames keep the two framework E2E pipelines independent.
 
 ### Tarball-based E2E workflows
 

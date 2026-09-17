@@ -14,9 +14,9 @@ export interface AssignOptions {
   /** CKK smoothing budget in ms */
   timeoutMs?: number;
   /**
-   * 'test' (default): balance per test, shard files may overlap.
-   * 'file': atomicity unit = whole file; every test in an assigned file
-   * runs in the same shard. Duration per file = sum of its tests.
+   * 'file' (default): atomicity unit = whole file; every test in an assigned
+   * file runs in the same shard. Duration per file = sum of its tests.
+   * 'test': balance per test, shard files may overlap.
    */
   level?: "test" | "file";
 }
@@ -63,7 +63,7 @@ function estimateDuration(timings: TimingData, id: TestWithDuration): number {
 export function assignShards(opts: AssignOptions): AssignResult {
   const { shards } = opts;
   if (shards < 1) throw new RangeError("shards must be >= 1");
-  return opts.level === "file" ? assignFileLevel(opts) : assignTestLevel(opts);
+  return opts.level === "test" ? assignTestLevel(opts) : assignFileLevel(opts);
 }
 
 /**

@@ -2,7 +2,7 @@
 
 - [x] 1.1 Copy the Jest orchestrator source, CLI entry point, selection shim, package metadata, TypeScript configuration, and unit coverage into `packages/jest-orchestrator/`.
 - [x] 1.2 Align the package with Bun/Turborepo scripts, public npm metadata, root lockfile, and Changesets publishing while retaining its Jest 30 peer dependency.
-- [x] 1.3 Validate exact selection, timing merge, and test/file-level assignment through the copied package unit suite.
+- [x] 1.3 Validate exact selection, timing merge, and default file-level plus opt-in test-level assignment through the copied package unit suite.
 
 ## 2. Jest Actions and fixtures
 
@@ -12,7 +12,7 @@
 
 ## 3. E2E workflows and contributor integration
 
-- [x] 3.1 Add a basic Jest E2E workflow using the Jest Actions, cached timing data, shard execution, and merged timing validation.
+- [x] 3.1 Add a basic Jest E2E workflow using the Jest Actions, cached timing data, default file-level shard execution, and merged timing validation.
 - [x] 3.2 Add a monorepo Jest E2E workflow that packs and installs the Jest workspace package, validates exact shard coverage, merges timing artifacts, and validates timing round trips.
 - [x] 3.3 Update CI path filters, Make targets, root/package documentation, and release/package validation for the second public package.
 

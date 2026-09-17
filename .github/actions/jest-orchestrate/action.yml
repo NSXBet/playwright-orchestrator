@@ -12,9 +12,9 @@ inputs:
     description: Total number of shards
     required: true
   level:
-    description: Assignment granularity (test | file)
+    description: Assignment granularity (file | test)
     required: false
-    default: test
+    default: file
   jest-args:
     description: Extra args passed to jest during discovery (e.g. --config)
     required: false

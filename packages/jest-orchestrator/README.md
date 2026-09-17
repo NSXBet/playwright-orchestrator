@@ -1,121 +1,204 @@
 # @nsxbet/jest-orchestrator
 
-Exact per-test Jest distribution across CI shards using historical timing
-data.
+Intelligent Jest test distribution across CI shards using historical timing data.
 
-Unlike file-level sharding, this package selects **individual tests** per
-shard via an **exact allowlist** — a jest-circus event-handler shim marks
-every test not assigned to the shard as `skip` _before_ execution — and
-**verifies after every run** that the executed set exactly equals the
-assigned set. No regex patterns anywhere in the selection path, so there
-are no substring collisions, no escaping hazards, and no case-sensitivity
-surprises (same design principle as Playwright's `--test-list`).
+**Requires Jest 30+ with the default jest-circus runner.**
 
-Requires Jest 30+ with jest-circus (Jest's default runner). Jest 29 is
-not supported: its circus event handlers are not reachable from
-`setupFilesAfterEnv`, so exact selection cannot work there.
+## The Problem
 
-## How it works
+Default Jest sharding distributes by **file count**, not by duration. A suite
+with one slow test file and several quick ones can leave CI waiting on a single
+straggling shard.
+
+| Shard | Duration | Result                |
+| ----- | -------- | --------------------- |
+| 1     | ~30 min  | slowest job blocks CI |
+| 2     | ~15 min  | runner is idle early  |
+| 3     | ~11 min  | runner is idle early  |
+
+## The Solution
+
+This orchestrator:
+
+1. **Learns** individual Jest test durations from prior runs.
+2. **Distributes files by default** with CKK/LPT balancing, keeping each file's
+   tests together to preserve file-level test setup and reduce repeated loading.
+3. **Optionally distributes individual tests** with exact allowlist selection
+   when a large file needs to be split.
+4. **Verifies** after every shard that the assigned test occurrences are exactly
+   the occurrences that Jest executed.
+
+### File-Level Distribution by Default
+
+`assign` defaults to `--level file`: a file is one atomic scheduling unit and
+its duration is the sum of its historical per-test timings.
 
 ```text
-jest --testNamePattern "(?!x)x" --json      -> per-test inventory (discovery)
-  -> orchestrator assign (CKK/LPT over historical per-test durations)
-  -> per shard: jest --setupFilesAfterEnv <shim> --runTestsByPath <files>
-       shim reads allowlist manifest (env var) and skips non-members
-  -> verify executed == assigned (both directions)
-  -> extract per-test durations -> merge with EMA -> prune stale entries
+file level (default): login.spec.ts (50 tests, 10 min) → one shard
+test level (optional): login.spec.ts tests → can spread across shards 1–4
 ```
 
-Key properties:
+Use `--level test` only when splitting a file is more important than keeping
+its tests together.
 
-- **Exact matching**: allowlist membership on `(file, fullName)` pairs built
-  with the same name-path algorithm jest-circus itself uses (`getTestID`).
-  `should login` and `should login with SSO` are distinct selections; `|`,
-  `$`, `^`, `\d`, parentheses and friends in titles are just text.
-- **Case-exact**: `Should Login` and `should login` are different tests and
-  are selected and verified independently (circus patterns are
-  case-insensitive; this approach is not).
-- **Focused suites stay correct**: selected tests are forced to `only` mode
-  so the suite's own `test.only` cannot disable them; unselected tests are
-  skipped. Discovery already reports only focused tests for focused suites,
-  so semantics are preserved exactly.
-- **Duplicate fullNames** (same name twice in one file) expand to one
-  selection entry per occurrence and each is verified as executed.
-- **Never-matching discovery** relies on jest-circus reporting every
-  registered test as `pending` in the JSON report when the pattern misses.
-- **Skipped tests pay no runtime cost**: their bodies, `beforeEach` /
-  `afterEach` hooks do not run.
+### Exact Test Selection
 
-## CLI
+Jest has no equivalent to Playwright's `--test-list`. For test-level plans, the
+orchestrator loads a `setupFilesAfterEnv` shim that uses exact `(file,
+fullName)` allowlist membership, not regex matching. Unassigned tests are
+marked skipped before execution and a bidirectional post-run check fails if a
+selected test is missed or an unselected one runs.
+
+That means names such as `should login`, `should login with SSO`, `Should
+Login`, `regex \\d+`, `$100`, and `A | B` remain distinct and safe.
+
+## Quick Start
 
 ```bash
-# 1. Discover the per-test inventory
-jest-orchestrator discover --root . --output tests.json
+# 1. Discover Jest's per-test inventory
+npx jest-orchestrator discover --root . --output jest-tests.json
 
-# 2. Assign tests to shards using historical timings (optional)
-jest-orchestrator assign --manifest tests.json --timings jest-timings.json \
-  --shards 4 --output assignment.json
+# 2. Assign whole files across shards (the default)
+npx jest-orchestrator assign \
+  --manifest ./jest-tests.json \
+  --timings ./jest-timing.json \
+  --shards 4 \
+  --output assignment.json
 
-# 3. Execute each shard (typically in parallel CI jobs)
-jest-orchestrator run-shard --root . --assignment assignment.json \
-  --shard 1 --output shard-1-timing.json --report-output shard-1-report.json
+# 3. Execute one shard exactly as assigned
+npx jest-orchestrator run-shard \
+  --root . \
+  --assignment ./assignment.json \
+  --shard 1 \
+  --output ./shard-1-timing.json \
+  --report-output ./shard-1-report.json
 
-#    Optional: turn failures into GitHub annotations + job summary
-jest-orchestrator annotate --report shard-1-report.json \
-  --summary-append "$GITHUB_STEP_SUMMARY"
-
-# 4. Merge timing artifacts (EMA smoothing), pruning deleted tests
-jest-orchestrator merge-timing \
-  --new shard-1-timing.json shard-2-timing.json \
-  --output jest-timings.json --prune-manifest tests.json
+# 4. Merge all shard timings with EMA smoothing
+npx jest-orchestrator merge-timing \
+  --existing ./jest-timing.json \
+  --new ./shard-1-timing.json ./shard-2-timing.json \
+  --output ./jest-timing.json \
+  --prune-manifest ./jest-tests.json
 ```
 
-Assignment granularity: `assign --level file` balances whole files
-(atomicity = file, duration = sum of its tests); `--level test`
-(default) balances per test.
+For test-level distribution, add `--level test` to `assign`. Both levels retain
+per-test timing data, so changing the scheduling granularity needs no timing
+store migration.
+
+## How It Works
+
+```text
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Orchestrate    │────▶│   Run Tests     │────▶│  Merge Timing   │
+│  (1 job)        │     │   (N parallel)  │     │  (1 job)        │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        │                       │                       │
+        ▼                       ▼                       ▼
+  Discover + assign       Exact allowlist shim      Merge all shards
+  Output all shard plans  Verify executed == plan   Update timing cache
+```
+
+1. **Orchestrate**: discover every registered test and assign all shards from
+   one timing snapshot.
+2. **Run Tests**: each shard invokes `run-shard`; file-level plans select all
+   tests in their files, while test-level plans use the exact allowlist shim.
+3. **Merge**: merge timing artifacts using EMA smoothing and prune tests no
+   longer present in the discovery manifest.
+
+## GitHub Actions
+
+The repository provides separate Jest Actions and leaves its Playwright Actions
+unchanged:
+
+| Action              | Purpose                                           |
+| ------------------- | ------------------------------------------------- |
+| `jest-orchestrate`  | Discover tests and produce an assignment artifact |
+| `jest-get-shard`    | Validate and retrieve a shard assignment          |
+| `jest-merge-timing` | Merge shard timing artifacts with EMA smoothing   |
+
+A typical workflow stores the assignment artifact between the orchestration and
+matrix jobs, then stores timing artifacts for the final merge job:
+
+```yaml
+jobs:
+  orchestrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm install -g @nsxbet/jest-orchestrator
+      - uses: NSXBet/test-orchestrator/.github/actions/jest-orchestrate@main
+        with:
+          root: .
+          timing-file: jest-timing.json
+          shards: 4
+          # level defaults to file; use test only when files must split
+
+  e2e:
+    needs: orchestrate
+    strategy:
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm install -g @nsxbet/jest-orchestrator
+      # Download the assignment artifact, then:
+      - run: |
+          jest-orchestrator run-shard \
+            --root . \
+            --assignment assignment.json \
+            --shard ${{ matrix.shard }} \
+            --output shard-timing-${{ matrix.shard }}.json
+```
+
+The Actions are storage-agnostic: use GitHub cache, artifacts, S3, or another
+backend to persist `jest-timing.json` between workflow runs.
+
+## CLI Commands
+
+| Command        | Description                                                          |
+| -------------- | -------------------------------------------------------------------- |
+| `discover`     | Create a per-test Jest inventory from the project root               |
+| `assign`       | Assign files (default) or tests (`--level test`) to shards           |
+| `run-shard`    | Execute and verify one assigned shard, then emit timings             |
+| `merge-timing` | Merge timing artifacts with EMA smoothing and optional pruning       |
+| `annotate`     | Convert a Jest JSON report into GitHub annotations and a job summary |
+
+Run `jest-orchestrator <command> --help` for complete flag documentation.
 
 ## Library API
 
 ```ts
-import { discoverTests, assignShards, runShard, mergeTimingData } from "@nsxbet/jest-orchestrator";
+import { assignShards, discoverTests, mergeTimingData, runShard } from "@nsxbet/jest-orchestrator";
 ```
 
-Test identity is structured (`{ project, file, fullName }`); string keys are
-canonical JSON encoded as base64url (`identityKey`), because fullNames can
-contain arbitrary text.
-
-## Fail loudly, never silently
-
-- A test deleted between `assign` and `run-shard` -> exit 2,
-  `expected test was NOT executed`.
-- A pattern over-matching -> `unexpected test WAS executed`.
-- Jest infrastructure failures (exit code other than 0/1, invalid JSON) throw.
+Test identities are structured as `{ project, file, fullName }`; timing-store
+keys are canonical base64url JSON so titles can contain arbitrary characters.
 
 ## Development
 
 ```bash
-make install   # bun install
-make test      # bun test
-make lint      # biome check .
-make typecheck # tsc --noEmit
-make build     # tsc -b
-make lab lab-pipeline   # end-to-end demo against /tmp/jest-lab
+make install               # Install workspace dependencies
+make lint                  # Lint both packages
+make typecheck             # Type-check both packages
+make test                  # Run both package test suites
+make build                 # Build both packages
+make act-e2e-jest          # Run the basic Jest E2E workflow locally
+make act-e2e-jest-monorepo # Run the tarball-based Jest monorepo E2E workflow
 ```
 
-## Known trade-offs
+## Cache Strategy
 
-- The selection shim is loaded through `--setupFilesAfterEnv`; if the user's
-  own config also uses `setupFilesAfterEnv`, both run (theirs first). The shim
-  is a no-op outside orchestrated runs (no `JEST_ORCHESTRATOR_SELECTION` env
-  var).
-- Tests with no timing history use a fallback chain: per-test history ->
-  same-file average -> global average -> 30s constant
-  (`DEFAULT_TEST_DURATION`) until measured.
-- Discovery executes file loads (module graph registration); files with
-  import-time side effects pay that cost during discovery. Files failing to
-  load fail discovery loudly.
-- **Jest multi-project configs are not project-aware yet**: identities are
-  keyed by (project, file, fullName) but `discover` currently reports
-  everything under one project, so the same file in two `displayName`
-  projects shares timing data. Test execution and coverage verification
-  remain correct; only duration balancing is coarser.
+GitHub Actions cache is branch-scoped. Use a **promote-on-merge** strategy:
+
+1. Save `jest-timing.json` under a branch-specific cache key.
+2. Restore the branch key first and fall back to a `main` key.
+3. After merge, promote the merged branch's timing cache to `main`.
+
+The repository's Jest example workflow demonstrates cache miss, exact hit, and
+restore-key reporting.
+
+## License
+
+MIT

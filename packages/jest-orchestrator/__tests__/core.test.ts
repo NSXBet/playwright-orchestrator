@@ -71,8 +71,20 @@ describe("file-level assignment", () => {
     expect(heavy?.expectedDuration).toBe(8000);
   });
 
-  test("test-level result reports level test", () => {
+  test("defaults to file-level assignment", () => {
     const result = assignShards({ tests, timings: null, shards: 2 });
+    expect(result.level).toBe("file");
+    const assignedFiles = result.shards.flatMap((shard) => shard.files);
+    expect(new Set(assignedFiles).size).toBe(assignedFiles.length);
+  });
+
+  test("test-level assignment is available on request", () => {
+    const result = assignShards({
+      tests,
+      timings: null,
+      shards: 2,
+      level: "test",
+    });
     expect(result.level).toBe("test");
   });
 });
