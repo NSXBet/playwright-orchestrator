@@ -44,4 +44,4 @@ openspec/                   # Specs and approved change proposals
 
 ## Publishing
 
-The workspace root is private. Changesets version and publish `@nsxbet/playwright-orchestrator` and `@nsxbet/jest-orchestrator` as public npm packages. See each package README for installation and usage.
+The workspace root is private. Changesets version and publish `@nsxbet/playwright-orchestrator` and `@nsxbet/jest-orchestrator` as public npm packages. See each package README for installation and usage. The [Jest external integration guide](./docs/jest-external-integration.md) includes its Actions and workflow pattern.

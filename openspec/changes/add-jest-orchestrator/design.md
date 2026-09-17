@@ -26,7 +26,7 @@ Alternative: merge Jest concepts into the Playwright package. Rejected because t
 
 ### Namespaced root Actions
 
-Expose Jest Actions at `.github/actions/jest-orchestrate`, `.github/actions/jest-get-shard`, and `.github/actions/jest-merge-timing`. Workflows use these paths, while the original unprefixed paths remain Playwright-only.
+Expose a cached npm installer at `.github/actions/setup-jest-orchestrator` and Jest orchestration Actions at `.github/actions/jest-orchestrate`, `.github/actions/jest-get-shard`, and `.github/actions/jest-merge-timing`. `run-shard` remains a CLI command rather than a redundant extract Action because it must launch Jest with the selection shim and owns the resulting report/timing artifact. Workflows use the Jest-prefixed paths, while the original unprefixed paths remain Playwright-only.
 
 Alternative: make generic framework-selecting Actions. Rejected because it would change established external contracts and introduce framework-specific branching into user-facing Actions.
 

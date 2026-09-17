@@ -40,7 +40,7 @@ The Jest orchestrator SHALL support file-level assignment by default and test-le
 
 ### Requirement: Jest GitHub Actions integration
 
-The repository SHALL expose root composite Actions named `jest-orchestrate`, `jest-get-shard`, and `jest-merge-timing` for consumers to create, retrieve, and merge Jest shard plans. These Actions SHALL be distinct from the existing Playwright action paths.
+The repository SHALL expose root composite Actions named `setup-jest-orchestrator`, `jest-orchestrate`, `jest-get-shard`, and `jest-merge-timing` for consumers to install the CLI and create, retrieve, and merge Jest shard plans. `run-shard` SHALL execute the plan and emit its timing artifact from the Jest report it controls. These Actions SHALL be distinct from the existing Playwright action paths.
 
 #### Scenario: Existing Playwright Actions
 
@@ -48,8 +48,15 @@ The repository SHALL expose root composite Actions named `jest-orchestrate`, `je
 - **WHEN** the Jest integration is added
 - **THEN** the existing Playwright action path and contract SHALL remain available
 
+#### Scenario: Setup Jest CLI in an external workflow
+
+- **GIVEN** a GitHub Actions workflow references `setup-jest-orchestrator`
+- **WHEN** the setup Action runs with a released version or an omitted version
+- **THEN** it SHALL install the requested or latest Jest CLI from npm, cache the global installation, and add it to `PATH`
+
 #### Scenario: Jest workflow pipeline
 
 - **GIVEN** a GitHub Actions workflow uses the Jest-prefixed Actions with a discovered project root and shard count
 - **WHEN** the workflow runs its orchestrate, shard, and merge phases
 - **THEN** it SHALL exchange a shard assignment artifact and timing artifacts without a storage backend dependency
+- **AND** `run-shard` SHALL produce the timing artifact while executing and verifying its selected Jest tests

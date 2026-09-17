@@ -1,6 +1,6 @@
-# Playwright Orchestrator - Documentation
+# Test Orchestrator Documentation
 
-Documentation for intelligent Playwright test distribution.
+Documentation for NSXBet's Playwright and Jest test-distribution packages.
 
 ## Documentation Index
 
@@ -12,13 +12,22 @@ Documentation for intelligent Playwright test distribution.
 - Solves shell escaping and substring collision problems
 - ~5 min read
 
-### External Integration
+### Playwright External Integration
 
 **[external-integration.md](./external-integration.md)**
 
-- Complete guide for external repositories
+- Complete Playwright guide for external repositories
 - GitHub Actions workflow patterns
 - Three-phase workflow (orchestrate → test → merge-timing)
+
+### Jest External Integration
+
+**[jest-external-integration.md](./jest-external-integration.md)**
+
+- Complete Jest 30+ guide for external repositories
+- `setup-jest-orchestrator` and Jest-prefixed Action references
+- File-level sharding by default, with optional exact test-level selection
+- Three-phase workflow (orchestrate → test/run-shard → merge-timing)
 
 ## Quick Links
 

@@ -153,7 +153,9 @@ jobs:
 ```
 
 The Actions are storage-agnostic: use GitHub cache, artifacts, S3, or another
-backend to persist `jest-timing.json` between workflow runs.
+backend to persist `jest-timing.json` between workflow runs. See the complete
+[external integration guide](../../docs/jest-external-integration.md) and
+[copy-paste workflow](../../examples/jest-external-workflow.yml).
 
 ## CLI Commands
 
