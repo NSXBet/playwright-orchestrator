@@ -756,6 +756,15 @@ jobs:
           path: warm-plan
       - uses: actions/download-artifact@v4
         with:
+          pattern: playwright-results-shard-*
+          path: cold-reports
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: timing-shard-*
+          merge-multiple: true
+          path: cold-timing-artifacts
+      - uses: actions/download-artifact@v4
+        with:
           pattern: playwright-warm-timing-*
           merge-multiple: true
       - uses: actions/download-artifact@v4
@@ -766,24 +775,34 @@ jobs:
         run: |
           set -euo pipefail
           FIRST=$(jq '.tests | length' warm-inputs/playwright-timing.json)
+          COLD_ASSIGNED=$(jq '[.shards[] | length] | add' warm-inputs/assignment.json)
+          COLD_PLANNED=$(jq '[.expectedDurations[]] | add' warm-inputs/assignment.json)
           EXPECTED=$(jq '[.shards[] | length] | add' warm-plan/assignment.json)
-          mapfile -t REPORTS < <(find warm-reports -name '*.json' -print)
-          [ "${#REPORTS[@]}" -gt 0 ] || { echo "::error::warm report coverage failed: no reports found under warm-reports"; exit 1; }
-          OBSERVED=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[]] | length' "${REPORTS[@]}")
-          MEASURED=$(jq -s 'map(.tests | length) | add' warm-timing-shard-*.json)
-          STATIC=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[] | .results[]? | select(.status == "skipped")] | length' "${REPORTS[@]}")
-          EXECUTABLE=$((EXPECTED - STATIC))
-          [ "$EXPECTED" -eq "$OBSERVED" ] || { echo "::error::warm report coverage failed: expected $EXPECTED assigned occurrences, observed $OBSERVED; inspect warm-reports"; exit 1; }
-          [ "$MEASURED" -eq "$EXECUTABLE" ] || { echo "::error::warm timing collection failed: expected $EXECUTABLE executable measurements after $STATIC static skips, observed $MEASURED; inspect warm-timing-shard artifacts"; exit 1; }
+          WARM_PLANNED=$(jq '[.expectedDurations[]] | add' warm-plan/assignment.json)
+          mapfile -t COLD_REPORTS < <(find cold-reports -name '*.json' -print)
+          mapfile -t WARM_REPORTS < <(find warm-reports -name '*.json' -print)
+          [ "${#COLD_REPORTS[@]}" -gt 0 ] || { echo "::error::cold report coverage failed: no reports found under cold-reports"; exit 1; }
+          [ "${#WARM_REPORTS[@]}" -gt 0 ] || { echo "::error::warm report coverage failed: no reports found under warm-reports"; exit 1; }
+          COLD_OBSERVED=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[]] | length' "${COLD_REPORTS[@]}")
+          WARM_OBSERVED=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[]] | length' "${WARM_REPORTS[@]}")
+          COLD_STATIC=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[] | .results[]? | select(.status == "skipped")] | length' "${COLD_REPORTS[@]}")
+          WARM_STATIC=$(jq -s '[.[] | .. | .specs? // empty | .[] | .tests? // empty | .[] | .results[]? | select(.status == "skipped")] | length' "${WARM_REPORTS[@]}")
+          COLD_EXECUTABLE=$((COLD_ASSIGNED - COLD_STATIC))
+          WARM_EXECUTABLE=$((EXPECTED - WARM_STATIC))
+          COLD_MEASURED=$(jq -s 'map(.tests | length) | add' cold-timing-artifacts/timing-shard-*.json)
+          WARM_MEASURED=$(jq -s 'map(.tests | length) | add' warm-timing-shard-*.json)
+          COLD_MEASURED_DURATION=$(jq -s '[.[] | .tests[]] | add // 0' cold-timing-artifacts/timing-shard-*.json)
+          WARM_MEASURED_DURATION=$(jq -s '[.[] | .tests[]] | add // 0' warm-timing-shard-*.json)
+          [ "$COLD_ASSIGNED" -eq "$COLD_OBSERVED" ] || { echo "::error::cold report coverage failed: expected $COLD_ASSIGNED assigned occurrences, observed $COLD_OBSERVED; inspect cold-reports"; exit 1; }
+          [ "$EXPECTED" -eq "$WARM_OBSERVED" ] || { echo "::error::warm report coverage failed: expected $EXPECTED assigned occurrences, observed $WARM_OBSERVED; inspect warm-reports"; exit 1; }
+          [ "$COLD_MEASURED" -eq "$COLD_EXECUTABLE" ] || { echo "::error::cold timing collection failed: expected $COLD_EXECUTABLE executable measurements after $COLD_STATIC static skips, observed $COLD_MEASURED; inspect cold-timing-artifacts"; exit 1; }
+          [ "$WARM_MEASURED" -eq "$WARM_EXECUTABLE" ] || { echo "::error::warm timing collection failed: expected $WARM_EXECUTABLE executable measurements after $WARM_STATIC static skips, observed $WARM_MEASURED; inspect warm-timing-shard artifacts"; exit 1; }
           playwright-orchestrator merge-timing --existing warm-inputs/playwright-timing.json --new warm-timing-shard-*.json --output warm-timing.json
           SECOND=$(jq '.tests | length' warm-timing.json)
           REPEATED=$(jq '[.tests[] | select(.runs >= 2)] | length' warm-timing.json)
           [ "$FIRST" -gt 0 ] || { echo "::error::warm hand-off has no cold timing entries; inspect playwright-warm-inputs"; exit 1; }
           [ "$SECOND" -eq "$FIRST" ] || { echo "::error::warm merge changed entries: expected $FIRST, got $SECOND; inspect warm-timing-shard artifacts"; exit 1; }
           [ "$REPEATED" -eq "$FIRST" ] || { echo "::error::warm merge updated $REPEATED/$FIRST executable timing entries; inspect warm-timing-shard artifacts"; exit 1; }
-          COLD_ASSIGNED=$(jq '[.shards[] | length] | add' warm-inputs/assignment.json)
-          COLD_PLANNED=$(jq '[.expectedDurations[]] | add' warm-inputs/assignment.json)
-          WARM_PLANNED=$(jq '[.expectedDurations[]] | add' warm-plan/assignment.json)
           {
             echo "## Playwright cold-to-warm lifecycle verdict"
             echo ""
@@ -800,7 +819,9 @@ jobs:
             jq -r '(.shards | to_entries[]) as $shard | "| \($shard.key) | \($shard.value | length) | \(.expectedDurations[$shard.key] // 0) ms |"' warm-inputs/assignment.json
             echo ""
             echo "### 3. Cold execution and collection"
-            echo "- Exact report coverage: verified in \`cold-reports/\`"
+            echo "- Report-covered occurrences: $COLD_OBSERVED/$COLD_ASSIGNED (reports: \`cold-reports/\`)"
+            echo "- Static skipped occurrences: $COLD_STATIC"
+            echo "- Executable measurements: $COLD_MEASURED/$COLD_EXECUTABLE, $COLD_MEASURED_DURATION ms (artifacts: \`cold-timing-artifacts/\`)"
             echo "- Merged timing entries: $FIRST"
             echo ""
             echo "### 4. Timing hand-off"
@@ -816,18 +837,20 @@ jobs:
             echo "- Placement/load comparison: see warm-plan diagnostics in job \`Orchestrate Playwright warm plan\`"
             echo ""
             echo "### 6. Warm execution and second merge"
-            echo "- Report-covered occurrences: $OBSERVED/$EXPECTED (reports: \`warm-reports/\`)"
-            echo "- Static skipped occurrences: $STATIC"
-            echo "- Executable measurements: $MEASURED/$EXECUTABLE (artifacts: \`playwright-warm-timing-*\`)"
+            echo "- Report-covered occurrences: $WARM_OBSERVED/$EXPECTED (reports: \`warm-reports/\`)"
+            echo "- Static skipped occurrences: $WARM_STATIC"
+            echo "- Executable measurements: $WARM_MEASURED/$WARM_EXECUTABLE, $WARM_MEASURED_DURATION ms (artifacts: \`playwright-warm-timing-*\`)"
             echo "- Repeated observations: $REPEATED/$FIRST"
             echo ""
             echo "### 7. Final verdict"
             echo "| Invariant | Expected | Actual | Result |"
             echo "| --- | --- | --- | --- |"
-            echo "| Cold assignment coverage | $COLD_ASSIGNED | $COLD_ASSIGNED | PASS |"
+            echo "| Cold assignment coverage | $COLD_ASSIGNED | $COLD_OBSERVED | PASS |"
+            echo "| Cold executable measurements | $COLD_EXECUTABLE | $COLD_MEASURED | PASS |"
             echo "| Cold store passed to warm plan | non-empty | $FIRST entries | PASS |"
-            echo "| Warm report coverage | $EXPECTED | $OBSERVED | PASS |"
+            echo "| Warm report coverage | $EXPECTED | $WARM_OBSERVED | PASS |"
+            echo "| Warm executable measurements | $WARM_EXECUTABLE | $WARM_MEASURED | PASS |"
             echo "| Second-run observations | $FIRST | $REPEATED | PASS |"
             echo "| Sparse empty shard | no-op | no native fallback | PASS |"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "✓ Playwright warm lifecycle: $OBSERVED/$EXPECTED report coverage and $REPEATED/$FIRST repeated timings"
+          echo "✓ Playwright warm lifecycle: $WARM_OBSERVED/$EXPECTED report coverage and $REPEATED/$FIRST repeated timings"
