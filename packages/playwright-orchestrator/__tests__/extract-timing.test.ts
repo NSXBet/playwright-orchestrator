@@ -302,11 +302,11 @@ describe("Extract Timing Command", () => {
       const result = runExtractTiming(report);
       const testIds = Object.keys(result.tests);
 
-      expect(testIds).toHaveLength(4);
+      expect(testIds).toHaveLength(3);
       expect(testIds).toContain("a.spec.ts::A::test 1");
       expect(testIds).toContain("a.spec.ts::A::test 2");
       expect(testIds).toContain("b.spec.ts::B::test 3");
-      expect(testIds).toContain("b.spec.ts::B::test 4");
+      expect(testIds).not.toContain("b.spec.ts::B::test 4");
     });
   });
 });

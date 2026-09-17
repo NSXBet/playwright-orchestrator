@@ -142,15 +142,22 @@ export default class ExtractTiming extends Command {
         const titlePath = [...currentTitles, spec.title];
         const testId = buildTestId(file, titlePath);
 
-        // Sum all result durations (including retries)
+        // Sum executed result durations (including retries). Static skips are
+        // preserved in report coverage but do not represent a measurement and
+        // must not create a zero-duration timing record.
         let totalDuration = 0;
+        let executed = false;
         for (const test of spec.tests) {
           for (const result of test.results) {
+            if (result.status === "skipped") continue;
             totalDuration += result.duration;
+            executed = true;
           }
         }
 
-        testDurations[testId] = totalDuration;
+        if (executed) {
+          testDurations[testId] = totalDuration;
+        }
       }
     }
 
