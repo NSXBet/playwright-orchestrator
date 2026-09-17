@@ -1,0 +1,30 @@
+packages/playwright-orchestrator/src/commands/extract-timing.ts
+  s_a366f4bba4f921::t_d3444232d50659 145-147,149,152,154,158-160
+.github/workflows/e2e-monorepo.yml
+  s_a366f4bba4f921::t_93ec5caeb85c77 517,521,525,783
+  s_a366f4bba4f921::t_889bfb04fcc52a 396-397,399,402
+  s_a366f4bba4f921::t_f8fa119b4834fa 774-775,777,820-821
+  s_a366f4bba4f921::t_4672775232a273 798-800,813-815
+.github/workflows/e2e-jest-monorepo.yml
+  s_a366f4bba4f921::t_35c9f1af00390e 508-510,524-526
+packages/playwright-orchestrator/__tests__/extract-timing.test.ts
+  s_a366f4bba4f921::t_c9194e5b831a61 305,309
+.changeset/gentle-cows-dig.md
+  s_a366f4bba4f921::t_8666e65cd309d5 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "40c613a17f3af09892e80177587d25745d264008",
+  "prompts": {},
+  "sessions": {
+    "s_a366f4bba4f921": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ad84-c2c2-7250-9966-d3f075c70c8d",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "gtkatakura <gt.katakura@gmail.com>"
+    }
+  }
+}
